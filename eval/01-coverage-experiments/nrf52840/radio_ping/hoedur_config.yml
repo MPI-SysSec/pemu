@@ -1,0 +1,91 @@
+limits:
+  basic_blocks: 0x0
+  interrupts: 0x0
+  mmio_read: 0x0
+  input_read_overdue: 0xc3500
+
+interrupt:
+  mode: fuzzed
+  trigger:
+    on-infinite-sleep: false
+    interval: false
+    custom:
+      - name: idle_loop
+        pc: 0x7b0
+
+network:
+  ani: pemu.artificial_network_interface.ANI
+  output: nrf52_radio_contiki_output.txt
+  faults:
+    probability: 0x14
+    target: all
+  np_only: true
+  apriori:
+    - field: IEEE802154.PAN_source
+      val: 0xabcd
+    - field: IEEE802154.LL_dest
+      val: 0x35886140f4ce36ed
+  protocols:
+    - protocol: [IEEE802154_PHY,6lowpan_MAC_Data, 6lowpan_mesh_frag, 6lowpan, ICMP6]
+    - protocol: [IEEE802154_PHY,6lowpan_MAC_Data, 6lowpan_mesh_frag, 6lowpan, UDP]
+
+pemu_hooks:
+  - address: 0x2af4
+    hook_type: receive
+    mcu: nrf52
+  - address: 0x2bd2
+    hook_type: transmit
+    mcu: nrf52
+  #  - address: 0xa2e0
+  #    hook_type: crash
+  #    mcu: nrf52
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x0
+    size: 0x1cc00
+    file:
+      path: hello-world.nrf52840.bin
+    type: rom
+  - name: ficr_uicr
+    address: 0x10000000
+    size: 0x2000
+    file:
+      path: "../roms/nrf52840_ficr_uicr.bin"
+    type: ram
+  - name: dynamically_added_crash_region_0000130
+    address: 0xfffb000
+    size: 0x5000
+    type: ram
+
+mmio_models:
+  - context:
+      pc: 0x34d0
+      mmio: 0x40000108
+    model:
+      constant:
+        value: 0x0
+
+exit_hooks:
+  - name: app_error_fault_handler
+    pc: 0x37c
+  - name: UsageFault_Handler
+    pc: 0x18dc
+  - name: BusFault_Handler
+    pc: 0x18da

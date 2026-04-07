@@ -1,0 +1,18 @@
+meta:
+  id: 0x10005
+  endian: be
+
+header:
+  InitA:
+    type: fuzzed
+    size: 6
+    doc: Initiator Address
+
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.TargetA
+    doc: Advertiser's address
+
+body:
+  size: 22

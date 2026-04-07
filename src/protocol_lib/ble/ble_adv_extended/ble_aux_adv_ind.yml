@@ -1,0 +1,85 @@
+meta:
+  id: 0x10017
+  endian: be
+
+header:
+  # this is the extended header core_v5.3 p2691
+  advMode:
+    type: conditional
+    size: b2
+    doc: mode decides which header fields are obligatory
+
+  extended_header_length:
+    type: handler
+    handler: ble_ext_header_length_handler
+    size: b6
+    doc: Length of the extended header
+
+  # now the variable extended header flags; table 2.12; page 2692
+  # bits      extended header
+  # ---------------------------
+  # 0         AdvA
+  # 1         TargetA
+  # 2         CTEInfo
+  # 3         AdvDataInfo (ADI)
+  # 4         AuxPtr
+  # 5         SyncInfo
+  # 6         TxPower
+  # 7         Reserved for future use
+  
+  # TODO probably handler
+  extended_header_flags:
+    type: condition
+    handler: extended_header_flags_handler
+    bitmask: [AdvA, TargetA, CTEInfo, AdvDataInfo, AuxPtr, SyncInfo, TxPower, ACAD]
+    size: 1
+    doc: The bits define which header fields are used
+
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.AdvA
+    doc: Advertiser's address
+
+  TargetA:
+    type: reference
+    size: 6
+    reference: BLE.TargetA
+    doc: Target's address
+
+  CTEInfo:
+    type: conditional
+    size: 1
+    doc: Presence indicates that the packe includes a constant tone extension
+                
+  AdvDataInfo:
+    type: conditional
+    size: 2
+    doc: ADI can be set to distinguish between different advertising sets by this device
+
+  AuxPtr:
+    type: conditional
+    size: 3
+    doc: Presence indicates that some or all of the advertisment data is in the subsequent auxillary packet
+
+  # TODO
+  SyncInfo:
+    type: conditional
+    size: 18
+    doc: sync info can be split in multiple header fields
+
+  TxPower:
+    type: conditional
+    size: 1
+    doc: TxPower level field
+
+  # TODO
+  ACAD:
+    type: conditional
+    size: 0 
+    doc: Remainder of header is filled by additional controller advertising data.
+
+
+body:
+  size: fuzzed
+  max: 254

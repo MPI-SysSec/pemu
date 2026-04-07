@@ -1,0 +1,89 @@
+meta:
+  id: 0x800
+  endian: be 
+
+header:
+  version:
+    type: data
+    size: b4
+    value : 0x4
+    doc: For Ipv4 the version is always equal to 4
+
+  ihl:
+    type: length
+    size: b4
+    scope: header
+    format: d
+    doc: Specifies the number of 32-bit words int the header
+
+  DSCP:
+    type: fuzzed
+    size: b6
+
+  ECN: 
+    type: fuzzed
+    size: b2
+
+  total_length:
+    type: length
+    size: 2
+    format: b
+    scope: all
+    doc: Total length of the packet in byte. Header size is at least 20 (without options)
+
+  identification:
+    type: fuzzed
+    size: 2
+    doc: Primarily used for identifying group of fragments of a single ipv4 datagram.
+
+  flags:
+    type: fuzzed
+    size: b3
+    doc: Flags are used to control or identify fragments
+
+  fragment_offset:
+    action: fragmentation
+    type: handler
+    size: b13
+    handler: ip4_fragmentation_handler
+    doc: offset of a particular fragment relative to the beginning of the original, unfragmented IPv4 datagram
+
+  ttl:
+    type: fuzzed
+    size: 1
+    doc: Time to live field ion seconds. Is checked by the router, but rarely by firmware     
+
+  protocol:
+    type: pointer
+    size: 1
+    doc: The IANA IP protocol number of the nested protocol. Defaults to zero if there is no layer
+
+  header_checksum:
+    type: checksum
+    size: 2
+    scope: header
+    checksum: ip4_checksum
+
+  source_ip:
+    type: reference
+    size: 4
+    reference: TCPIP.IP4_source
+    doc: Source IPv4 address.
+
+  destination_ip:
+    type: reference
+    size: 4
+    reference: TCPIP.IP4_dest
+    default: 0
+    doc: Destination IPv4 address.
+
+  options:
+    type: fuzzed
+    size: 0
+    doc: Up to 36 32-bit words of options
+
+body:
+  size: fuzzed
+
+
+

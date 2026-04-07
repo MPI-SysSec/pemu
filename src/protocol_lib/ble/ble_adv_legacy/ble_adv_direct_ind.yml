@@ -1,0 +1,20 @@
+meta:
+  id: 0x10001
+  endian: be
+
+# adv_direct_ind contains a target address but NO host data (core5.3 p2681)
+header:
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.AdvA
+    doc: Advertiser's address
+
+  TargetA:
+    type: reference
+    size: 6
+    reference: BLE.TargetA
+    doc: Target's address
+
+body:
+  size: 0

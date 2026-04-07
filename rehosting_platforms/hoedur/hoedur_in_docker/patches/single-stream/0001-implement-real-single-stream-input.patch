@@ -1,0 +1,160 @@
+From e001e1109f3255dc9d7b2cd8f8941ce254b6b93e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Simon=20W=C3=B6rner?= <git@simon-woerner.de>
+Date: Tue, 12 Jul 2022 14:43:48 +0200
+Subject: [PATCH 1/2] implement "real" single stream input
+
+---
+ common/src/config.rs     |  2 +-
+ modeling/src/hardware.rs | 85 +++++++++++++++++++++++++++++-----------
+ 2 files changed, 64 insertions(+), 23 deletions(-)
+
+diff --git a/common/src/config.rs b/common/src/config.rs
+index 88d37f92..7061a8fb 100644
+--- a/common/src/config.rs
++++ b/common/src/config.rs
+@@ -16,7 +16,7 @@ pub mod input {
+     pub enum InputContextType {
+         AccessContext, // pc, mmio, type
+         MmioContext,   // mmio, type
+-        None,          // none
++        None,          // none (also enables single stream)
+     }
+ }
+ 
+diff --git a/modeling/src/hardware.rs b/modeling/src/hardware.rs
+index 3236a670..740862d6 100644
+--- a/modeling/src/hardware.rs
++++ b/modeling/src/hardware.rs
+@@ -1,13 +1,14 @@
+ use std::{borrow::Cow, fmt::Debug, io::Write, mem, ops::Shr};
+ 
+ use anyhow::{Context, Result};
++use common::config::input::{InputContextType, INPUT_CONTEXT_TYPE};
+ use common::FxHashMap;
+ use qemu_rs::{Address, Exception, MmioAddress, USize};
+ 
+ use crate::{
+     input::{
+         value::{InputValue, InputValueType},
+-        InputContext,
++        InputContext, StreamContext,
+     },
+     mmio::{aligned, AccessContext},
+     mmio_model::{MmioModel, ReadSize},
+@@ -127,38 +128,47 @@ impl<I: Input + Debug> Hardware<I> {
+             Some(MmioModel::Set { values }) => {
+                 let context =
+                     InputContext::from_access(context, InputValueType::Choice(values.len() as u8));
+-                let value = input
+-                    .read(&context)
+-                    .map(|input_value| match input_value.as_ref() {
+-                        InputValue::Choice { index, .. } => values[*index as usize],
+-                        _ => unreachable!("invalid InputValue type"),
+-                    });
++                let value = if matches!(INPUT_CONTEXT_TYPE, InputContextType::None) {
++                    mmio_read_single_stream(input, context.value_type())
++                } else {
++                    input.read(&context)
++                }
++                .map(|input_value| match input_value.as_ref() {
++                    InputValue::Choice { index, .. } => values[*index as usize],
++                    _ => unreachable!("invalid InputValue type"),
++                });
+ 
+                 input_context = Some(context);
+                 value
+             }
+             Some(MmioModel::BitExtract(be)) => {
+                 let context = InputContext::from_access(context, InputValueType::Bits(be.bits()));
+-                let value = input
+-                    .read(&context)
+-                    .map(|input_value| match input_value.as_ref() {
+-                        InputValue::Bits { value, .. } => be.apply(*value),
+-                        _ => unreachable!("invalid InputValue type"),
+-                    });
++                let value = if matches!(INPUT_CONTEXT_TYPE, InputContextType::None) {
++                    mmio_read_single_stream(input, context.value_type())
++                } else {
++                    input.read(&context)
++                }
++                .map(|input_value| match input_value.as_ref() {
++                    InputValue::Bits { value, .. } => be.apply(*value),
++                    _ => unreachable!("invalid InputValue type"),
++                });
+ 
+                 input_context = Some(context);
+                 value
+             }
+             None => {
+                 let context = InputContext::from_access(context, size.into());
+-                let value = input
+-                    .read(&context)
+-                    .map(|input_value| match input_value.as_ref() {
+-                        InputValue::Byte(value) => *value as u32,
+-                        InputValue::Word(value) => *value as u32,
+-                        InputValue::DWord(value) => *value,
+-                        _ => unreachable!("invalid InputValue type"),
+-                    });
++                let value = if matches!(INPUT_CONTEXT_TYPE, InputContextType::None) {
++                    mmio_read_single_stream(input, context.value_type())
++                } else {
++                    input.read(&context)
++                }
++                .map(|input_value| match input_value.as_ref() {
++                    InputValue::Byte(value) => *value as u32,
++                    InputValue::Word(value) => *value as u32,
++                    InputValue::DWord(value) => *value,
++                    _ => unreachable!("invalid InputValue type"),
++                });
+ 
+                 input_context = Some(context);
+                 value
+@@ -169,7 +179,14 @@ impl<I: Input + Debug> Hardware<I> {
+         Ok(value.map(|value| {
+             // track mmio accesses
+             let input_value = if let Some(context) = input_context {
+-                self.access_log.push(context);
++                if matches!(INPUT_CONTEXT_TYPE, InputContextType::None) {
++                    for _ in 0..context.value_type().bytes() {
++                        self.access_log
++                            .push(InputContext::new(StreamContext::None, InputValueType::Byte));
++                    }
++                } else {
++                    self.access_log.push(context);
++                }
+                 true
+             } else {
+                 false
+@@ -202,6 +219,30 @@ impl<I: Input + Debug> Hardware<I> {
+     }
+ }
+ 
++fn mmio_read_single_stream<I: Input + Debug>(
++    input: &mut I,
++    value_type: InputValueType,
++) -> Option<Cow<InputValue>> {
++    let size = value_type.bytes();
++    let bytes = (0..size)
++        .map(|_| {
++            input
++                .read(&InputContext::new(
++                    StreamContext::None,
++                    InputValueType::Byte,
++                ))
++                .map(|value| match *value {
++                    InputValue::Byte(byte) => byte,
++                    _ => unreachable!(),
++                })
++        })
++        .collect::<Option<Vec<_>>>()?;
++
++    InputValue::from_bytes(value_type, bytes)
++        .map(Cow::Owned)
++        .ok()
++}
++
+ impl Memory {
+     fn new() -> Self {
+         Self {
+-- 
+2.40.1

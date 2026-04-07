@@ -1,0 +1,14 @@
+meta:
+  id: 0x10004
+  endian: be
+
+header:
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.TargetA
+    doc: Target's address
+
+body:
+  size: fuzzed
+  max: 31

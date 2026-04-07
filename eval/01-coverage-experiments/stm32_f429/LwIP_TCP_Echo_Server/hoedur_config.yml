@@ -1,0 +1,117 @@
+board:
+  init_nsvtor: 0x8000000
+
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: true
+    interval: 1000
+  blocklist:
+    - 48
+    - 72
+    - 47
+
+network: 
+  ani: pemu.artificial_network_interface.ANI
+  np_only: true
+  output: f429_tcp_server_output.txt
+  faults: 
+    probability: 0x14
+    target: all
+  apriori:
+    - field: DHCP.chaddr
+      val: 0x2010000000000000000000000000000
+    - field: DHCP.xid
+      val: 0x4bb5f646
+    - field: TCPIP.MAC_dest
+      val: 0x20100000000
+  protocols:
+    - protocol: [Ethernet, IP4, UDP, DHCP]
+    - protocol: [Ethernet, IP4, UDP, DHCP]
+    - protocol: [Ethernet, IP4, TCP]
+    - protocol: [Ethernet, ARP]
+    - protocol: [Ethernet, IP4, TCP]
+
+pemu_hooks:
+  - address: 0x80008d2 # ethernetif_input
+    hook_type: receive
+    mcu: f7xx
+  - address: 0x80030de # HAL_ETH_Transmit
+    hook_type: transmit
+    mcu: f7xx
+  #  - address: 0x8006890
+  #    hook_type: crash
+  #    mcu: f7xx
+  #- address: 0x8000f98 
+  #- address: 0x800afb8
+  
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x8000000
+    size: 0x23c00
+    file:
+      path: LwIP_TCP_Echo_Server.bin
+    type: rom
+  - name: fsmc_region
+    address: 0xa0000000
+    size: 0x1000
+    type: ram
+  - name: bank1
+    address: 0x60000000
+    size: 0x10000000
+    type: ram
+  - name: bank2
+    address: 0x70000000
+    size: 0x10000000
+    type: ram
+  - name: bank3
+    address: 0x80000000
+    size: 0x10000000
+    type: ram
+  - name: bank4
+    address: 0x90000000
+    size: 0x10000000
+    type: ram
+  - name: sdram_bank1
+    address: 0xc0000000
+    size: 0x10000000
+    type: ram
+  - name: sdram_bank2
+    address: 0xd0000000
+    size: 0x10000000
+    type: ram
+
+exit_hooks:
+  - name: DMA1_Stream3_IRQHandler
+    pc: 0x80005e4
+
+symbols:
+  - LwIP_TCP_Echo_Server.elf
+script: |
+  pub fn main(api) {
+    api.on_init(on_init);
+  }
+  
+  fn on_init() {
+    common::patch_function("HAL_Delay", arm::RETURN);
+    common::patch_function("BSP_LCD_DisplayChar", arm::RETURN);
+    common::patch_function("puts", arm::RETURN);
+
+  }
+# common::patch_address(0x80007CE, arm::RETURN); // DHCP_periodic_handle_timer_skip

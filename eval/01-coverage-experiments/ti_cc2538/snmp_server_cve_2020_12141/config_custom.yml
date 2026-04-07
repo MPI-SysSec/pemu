@@ -1,0 +1,12 @@
+handlers:
+  fade: null
+  lpm_enter: null
+  printf: null
+interrupt_triggers:
+  idle_interrupt:
+    addr: platform_idle
+    fuzz_mode: round_robin
+    #irq: 0x9d
+    #
+    #
+

@@ -1,0 +1,52 @@
+# https://www.sharetechnote.com/html/IoT/LR_WPAN_802_15_4.html
+meta:
+  id: 0x20000
+  endian: be
+  field_endian: le
+
+header:
+  frame_control:
+    type: condition
+    size: 2
+    cond_handler: ieee802154_mac_beacon_fcf
+    doc: frame control is essentially like a flag field, where each bit encodes different informatio
+  sequence_number:
+    type: fuzzed
+    size: 1
+    doc: regular sequence number 
+  destination_PAN:
+    type: reference
+    reference: IEEE802154.PAN_dest
+    doc: The existence and size of the destination PAN depends on the frame control field  
+  destination_addr:
+    type: reference
+    reference: IEEE802154.LL_dest
+    doc: The existence and size of the destination address depends on the frame control field
+  source_PAN:
+    type: reference
+    reference: IEEE802154.PAN_source
+    doc: The existence and size of the source PAN depends on the frame control field
+  source_addr:
+    type: reference
+    reference: IEEE802154.LL_source
+    doc: The existence and size of the source address depends on the frame control field
+  auxillary_security_header:
+    type: conditional
+    doc: The existence and size of the aux security header depends on the frame control field
+  # MAC Payload
+  superframe_specification:
+    type: fuzzed
+    size: 2
+    doc: Determines the superframe duration
+  gts:
+    type: fuzzed
+    size: 0
+    doc: dependent on other values (gts permit bit). skip for now 
+  pending_addr_fields:
+    type: fuzzed
+    size: 0
+    doc: skipping for now
+
+body: 
+  size: fuzzed
+  max: 100

@@ -1,0 +1,17 @@
+include:
+  - config.yml
+peripherals:
+  nrf52_ppi:
+    base_addr: 0x4001f000
+    class: fuzzware_harness.peripherals.nordic.nrf52_ppi.PPI
+    size: 0x990
+  nrf52_radio_controller:
+    packet_limit: 30
+    base_addr: 0x40001000
+    class: fuzzware_harness.peripherals.nordic.nrf52840_radio.RADIO
+    ani: fuzzware_harness.network.artificial_network_interface.ANI
+    network: {}
+
+    irqs:
+    - 0x11
+    size: 0xffc

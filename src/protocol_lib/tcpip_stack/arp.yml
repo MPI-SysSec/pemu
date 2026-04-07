@@ -1,0 +1,69 @@
+######################
+# arp over ethernet! #
+######################
+meta:
+  id: 0x806
+  endian: be
+ 
+header:
+  htype:
+    type: fuzzed
+    size: 2
+    ephemeral: true
+    options: [1, -1]
+    doc: Specifies the network link layer protocol type (1 for ethernet)
+
+  ptype:
+    type: fuzzed
+    size: 2
+    ephemeral: true
+    options: [0x0800, 0x86dd, -1]
+    doc: Specifies the protocol value for which the ARP request is intended (0x0800 for IPv4)
+
+  hlen:
+    type: length
+    format: b
+    size: 1
+    scope: sha
+    doc: length in octets of the hardware address
+
+  plen:
+    type: length
+    size: 1
+    format: b
+    scope: spa
+    doc: length in octets of the internetwork addresses
+
+  operation:
+    type: fuzzed
+    size: 2
+    ephemeral: true
+    options: [1,2, -1]
+    doc: Specifies the senders operation (1 for request, 2 for reply)
+
+  sha:
+    type: reference
+    size: 6
+    reference: TCPIP.MAC_source
+    doc: sender hardware address
+
+  spa:
+    type: reference
+    size: 4
+    reference: TCPIP.IP4_source
+    doc: sender protocol address
+
+  tha:
+    type: reference
+    size: 6
+    reference: TCPIP.MAC_dest
+    doc: target hardware address
+
+  tpa:
+    type: reference
+    size: 4
+    reference: TCPIP.IP4_dest
+    doc: target protocol address
+
+body:
+  size: 0

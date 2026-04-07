@@ -1,0 +1,24 @@
+From a65db8c286aa192aef0a4f06a2ff1c3fde750518 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Simon=20W=C3=B6rner?= <git@simon-woerner.de>
+Date: Thu, 2 Jun 2022 13:40:18 +0200
+Subject: [PATCH 2/2] enable single stream
+
+---
+ common/src/config.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common/src/config.rs b/common/src/config.rs
+index 7061a8fb..147fa25b 100644
+--- a/common/src/config.rs
++++ b/common/src/config.rs
+@@ -12,7 +12,7 @@ pub mod emulator {
+ }
+ 
+ pub mod input {
+-    pub const INPUT_CONTEXT_TYPE: InputContextType = InputContextType::AccessContext;
++    pub const INPUT_CONTEXT_TYPE: InputContextType = InputContextType::None;
+     pub enum InputContextType {
+         AccessContext, // pc, mmio, type
+         MmioContext,   // mmio, type
+-- 
+2.40.1

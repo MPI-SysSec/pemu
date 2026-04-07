@@ -1,0 +1,47 @@
+# https://novelbits.io/deep-dive-ble-packets-events/
+# https://novelbits.io/bluetooth-low-energy-advertisements-part-1/
+meta:
+  id: 0x10009
+  endian: be
+
+header:
+  rxadd:
+    type: fuzzed
+    size: b1
+    doc: 1 if target device's address is random, 0 if address is public
+  txadd:
+    type: fuzzed
+    size: b1
+    doc: 1 if advertiser's address is random, 0 if address is public
+  chsel:
+    type: fuzzed
+    size: b1
+    doc: 1 if advertiser supports the LE Channel Selection Algorithm \#2 feature
+  rfu:
+    type: data
+    size: b1
+    value: 0
+    doc: Reserved for future use
+
+  pdu_type:
+    type: pointer
+    size: b4
+    doc: Type defines the next layer. The type val is between 0x0 and 0x8. We use 0x10000 as the bluetooth offset to realize this.  
+    
+  length:
+    type: length
+    size: 1
+    scope: body
+    format: b
+    doc: Length in bytes of payload
+  
+  paddingg:
+    type: data
+    size: 1
+    value: 0
+    doc: A padding zero byte, which is necessary in nordic, and elsewhere?
+
+body:
+  size: fuzzed
+  max: 30
+  

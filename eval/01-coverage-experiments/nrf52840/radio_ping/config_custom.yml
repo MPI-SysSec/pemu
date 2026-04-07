@@ -1,0 +1,30 @@
+exit_at:
+  app_error_fault_handler: app_error_fault_handler
+  UsageFault_Handler: UsageFault_Handler
+  BusFault_Handler: BusFault_Handler
+interrupt_triggers:
+  idle_loop:
+    addr: 0x7b0 #main idle loop  
+    fuzz_mode: fuzzed
+limits:
+  fuzz_consumption_timeout: 800000
+
+memory_map:
+  ficr_uicr:
+    base_addr: 0x10000000
+    permissions: rw-
+    file: ../roms/nrf52840_ficr_uicr.bin
+    size: 0x2000
+    is_entry: False
+  dynamically_added_crash_region_0000130:
+    base_addr: 0xfffb000
+    permissions: rw-
+    size: 0x5000
+
+mmio_models:
+  constant:
+    nrfx_power_irq_handler_skip_jump_to_0:
+      access_size: 4
+      addr: 0x0000000040000108
+      pc: 0x00000000000034d0
+      val: 0

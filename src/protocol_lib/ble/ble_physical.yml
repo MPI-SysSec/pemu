@@ -1,0 +1,12 @@
+meta:
+  id: 
+  endian: be
+
+header:
+  dummy_header:
+    size: 0
+    type: fuzzed
+    doc: just a dummy
+
+body:
+  size: fuzzed

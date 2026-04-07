@@ -1,0 +1,12 @@
+include:
+  - config.yml
+peripherals:
+  stm32f429_eth:
+    packet_limit: 30
+    class: fuzzware_harness.peripherals.stm32.f429.ETH
+    base_addr: 0x40029000
+    size: 0x1400
+    irqs:
+      # ETH_IRQHandler
+      - 77
+      - 61

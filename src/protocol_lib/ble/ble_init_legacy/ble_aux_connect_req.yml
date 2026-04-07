@@ -1,0 +1,69 @@
+meta:
+  id: 0x10015
+  endian: be
+
+header:
+  InitA:
+    type: fuzzed
+    size: 6
+    doc: Initiator Address
+
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.AdvA
+    doc: Advertiser's address
+
+  # LLData
+  AA:
+    type: fuzzed
+    size: 4
+    doc: Access Address
+
+  CRCInit:
+    type: fuzzed
+    size: 3   
+    doc: contains the initialization for the CRC calculation.
+
+  WinSize:
+    type: fuzzed  
+    size: 1
+    doc: Shall be set to indicate the transmitWindowSize value
+
+  WinOffset:
+    type: fuzzed
+    size: 2
+    doc: Shall be set to indicate the transmitWindowOffset value
+
+  Interval:
+    type: fuzzed
+    size: 2
+    doc: Shall be set to indicate the connInterval
+
+  Latency:
+    type: fuzzed
+    size: 2
+    doc: Can be set to indicate the connSlaveLatency value.
+
+  Timeout:
+    type: fuzzed
+    size: 2
+    doc: Shall be set to indicate the connPeripheralLatency value
+
+  ChM:
+    type: fuzzed
+    size: 5
+    doc: Contains channel map
+
+  Hop:
+    type: fuzzed
+    size: b5
+    doc: Used for the hopincrement value
+
+  SCA:
+    type: fuzzed
+    size: b3
+    doc: used to determine worst-case Master's sleep clock accuracy
+
+body:
+  size: fuzzed

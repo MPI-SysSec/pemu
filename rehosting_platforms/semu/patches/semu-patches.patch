@@ -1,0 +1,164 @@
+diff --git a/semu_fuzz/emulate/semu/rule.py b/semu_fuzz/emulate/semu/rule.py
+index fda1d82..9c877df 100644
+--- a/semu_fuzz/emulate/semu/rule.py
++++ b/semu_fuzz/emulate/semu/rule.py
+@@ -1,5 +1,5 @@
+ from ... import globs
+-from ...utils import get_realpath
++from ...utils import get_realpath, semu_setup_fuzz, semu_get_bytes
+ from ...exit import do_exit
+ from ...log.debug import debug_info
+ from ..nvic import nvic_get_active, send_pending, nvic_get_pending
+@@ -479,6 +479,7 @@ def deal_rule_flag(flag_type='counter', address=None):
+         
+ #------------------------------------------#
+ 
++
+ def hardware_write_to_receive_buffer(data_reg, phaddr, value_queue):
+     '''
+     hardware write to data_reg's receive buffer.
+@@ -505,6 +506,7 @@ def hardware_write_to_descriptor(buffer_input):
+     '''
+     write buffer_input to the descriptor of the ETH.
+     '''
++    semu_setup_fuzz(buffer_input)
+     # get desciptor phaddr address
+     cur_dp_addr = RULE.cur_dp_addr
+     if cur_dp_addr == 0:
+@@ -547,14 +549,26 @@ def hardware_write_to_descriptor(buffer_input):
+         frame_size += data_size
+         RDES[0] = RDES[0] + (data_size << 16)
+         uc.mem_write(cur_dp_addr, RDES[0].to_bytes(4, 'little'))
+-        # write to RDES1
+-        RDES[1] = (RDES[1] & 0xFFFFE000) + data_size
+-        uc.mem_write(cur_dp_addr + 4, RDES[1].to_bytes(4, 'little'))
++
+         # write to RDES2
++        if globs.ani:
++            fuzz_bytes = globs.ani.get_packet(max_n=data_size)
++            print(f"sent network packet: {fuzz_bytes}")
++        else:
++            fuzz_bytes = semu_get_bytes(data_size)
++            print(f"sent random bytes: {fuzz_bytes}")
++
++        uc.mem_write(RDES[2], fuzz_bytes)
++        data_size = len(fuzz_bytes)
++        """
+         for j in range(data_size):
+             content = RDES2_content[0]
+             RDES2_content = RDES2_content[1:]
+             uc.mem_write(RDES[2] + j, content.to_bytes(1, 'little'))
++        """
++        # write to RDES1
++        RDES[1] = (RDES[1] & 0xFFFFE000) + data_size
++        uc.mem_write(cur_dp_addr + 4, RDES[1].to_bytes(4, 'little'))
+         # update RDES
+         # first descriptor
+         if len(descriptor_list) == 1:
+@@ -1162,4 +1176,4 @@ class RULE():
+             ru.beginpointHook_handler = uc.hook_add(UC_HOOK_CODE, beginpointHook)
+ 
+         # deal O once
+-        deal_rule_O()
+\ No newline at end of file
++        deal_rule_O()
+diff --git a/semu_fuzz/globs.py b/semu_fuzz/globs.py
+index cba29d9..8b0e2f2 100644
+--- a/semu_fuzz/globs.py
++++ b/semu_fuzz/globs.py
+@@ -4,7 +4,9 @@ uc = None
+ config_dir = ""
+ block_count = 0
+ user_input = []
++cursor_input = []
+ tool_name = 'semu-fuzz'
++ani = None
+ 
+ #-- parameters in configuration --#
+ DEFAULT_BASIC_BLOCK_LIMIT = 30000000 # the number of basic blocks to be executed
+@@ -13,4 +15,4 @@ DEFAULT_BASIC_BLOCK_LIMIT = 30000000 # the number of basic blocks to be executed
+ DEFAULT_NUM_NVIC_VECS = 240 # the number of irqs in nvic vtor
+ INTERRUPT_INTERVAL = 1500 # the number of interrupt interval blocks
+ DATA_REGS_INTERVAL = 1000 # the number of blocks for data register write interval
+-PAGE_SIZE = 0x1000 # the size of page
+\ No newline at end of file
++PAGE_SIZE = 0x1000 # the size of page
+diff --git a/semu_fuzz/harness.py b/semu_fuzz/harness.py
+index 86a087b..796d45d 100644
+--- a/semu_fuzz/harness.py
++++ b/semu_fuzz/harness.py
+@@ -1,10 +1,12 @@
+ from . import globs
++from .utils import semu_get_bytes
+ from .configuration import args, config
+ from .emulate import uc, nvic
+ from .log import debug, fuzz_stat
+ from .emulate.semu.rule import rules_configure
+ from .handlers import reset_func_handler
+ from .emulate import snapshot
++from .emulate.network.artificial_network_interface import ANI
+ import gc
+ 
+ # for debug when haven't install this pkg.
+@@ -40,6 +42,14 @@ def main():
+             if func_name in reset_func:
+                 reset_func_handler(uc, addr, config.handlers[func_name])
+ 
++    # configure network
++    if 'network' in config:
++        location = "semu_fuzz.emulate.network" # default location
++        if 'ani' in config:
++            location = config.ani
++        globs.ani = ANI(config.network, semu_get_bytes, location)
++        print(f"initialized ani {globs.ani}")
++
+     # configure rule
+     rules_configure(uc, globs.config.rules)
+ 
+@@ -63,5 +73,6 @@ def main():
+         print("%s mode has not been supported, yet." % emulate_mode)
+ 
+ 
+-    
++
++
+ 
+diff --git a/semu_fuzz/utils.py b/semu_fuzz/utils.py
+index 7fe1404..40b1df6 100644
+--- a/semu_fuzz/utils.py
++++ b/semu_fuzz/utils.py
+@@ -1,8 +1,27 @@
+ from .exit import do_exit
++from . import globs
+ 
+ from ctypes import cdll
+ import os
+ 
++def semu_setup_fuzz(user_input: list):
++    if globs.cursor_input:
++        return
++
++    globs.cursor_input = list(user_input)
++    print(f"[semu_setup_fuzz] setup cursor input: {globs.cursor_input}")
++    return
++
++def semu_get_bytes(n: int) -> bytes:
++    if n > len(globs.cursor_input):
++        print("[WARN] Out of fuzz")
++    if not globs.cursor_input:
++        return n * b'\x00'
++
++    fuzz = globs.cursor_input[:n]
++    globs.cursor_input = globs.cursor_input[n:]
++    return bytes(fuzz)
++
+ def load_lib(path):
+     ''' load lib file. '''
+     try:
+@@ -105,4 +124,4 @@ def run_task(command, task_id, timeout=10):
+         print("[-] %05d Process timed out. Killing process..." % task_id)
+         return False
+ 
+-    return True
+\ No newline at end of file
++    return True

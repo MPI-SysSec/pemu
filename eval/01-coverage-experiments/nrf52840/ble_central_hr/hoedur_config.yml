@@ -1,0 +1,134 @@
+limits:
+  basic_blocks: 0x0
+  interrupts: 0x0
+  mmio_read: 0x0
+  input_read_overdue: 0x7a120
+
+interrupt:
+  mode: fuzzed
+  trigger:
+    on-infinite-sleep: false
+    interval: false
+    custom:
+      - name: idle_loop
+        pc: 0x24778
+
+network:
+  ani: pemu.artificial_network_interface.ANI
+  output: nrf52_central_hr_output.txt
+  faults:
+    probability: 0x14
+    target: all
+  np_only: true
+  analysis: none
+  protocols:
+    - protocol: [BLE_PHY, BLE_adv_channel_pdu, BLE_adv_ADV_EXT_IND]
+
+pemu_hooks:
+  - address: 0x13f7e
+    hook_type: receive
+    mcu: nrf52
+  - address: 0x6a2a 
+    hook_type: transmit
+    mcu: nrf52
+  #- address: 0x13f7e
+  #  hook_type: crash
+  #  mcu: nrf52
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x0
+    size: 0x41c00
+    file:
+      path: nrf52840_central_hr.bin
+    type: rom
+  - name: ficr_uicr
+    address: 0x10000000
+    size: 0x2000
+    file:
+      path: "../roms/nrf52840_new_ficr_uicr.bin"
+    type: ram
+  - name: weird_nvic_e000ed90
+    address: 0xe000ec00
+    size: 0x400
+    file:
+      offset: 0x190
+      path: "../roms/zephyr_nvic.bin"
+    type: ram
+  - name: flash1
+    address: 0x49000
+    size: 0xaf000
+    #size: 0xffb7000
+    type: ram
+  - name: flash2
+    address: 0x1b6c00
+    size: 0xfe49400
+    #size: 0xffb7000
+    type: ram
+  - name: flash_overlay
+    address: 0xf8000
+    size: 0x1000
+    file:
+      path: "../roms/flash_extract_f8000.bin"
+    type: ram
+  - name: flash_second_overlay
+    address: 0xf9000
+    size: 0xbdc00
+    file:
+      path: "../roms/chunky_flash.bin"
+    type: ram
+
+mmio_models:
+  - context:
+      pc: 0x285fa
+      mmio: 0x5002b130
+    model:
+      passthrough:
+        initial_value: 0x0
+  - context:
+      pc: 0x288f8
+      mmio: 0x5002b130
+    model:
+      passthrough:
+        initial_value: 0x0
+
+exit_hooks:
+  - name: sys_reboot
+    pc: 0x189cc
+  - name: sys_arch_reboot
+    pc: 0x1a09c
+  - name: platform_abort
+    pc: 0x27648
+  - name: sdc_assert_fail
+    pc: 0x222e4
+  - name: assert
+    pc: 0x230c4
+  - name: pre_gpio_assert
+    pc: 0x234f6
+
+symbols:
+  - nrf52840_central_hr.elf
+script: |
+  pub fn main(api) {
+    api.on_init(on_init);
+  }
+  
+  fn on_init() {
+    common::patch_function("vprintk", arm::RETURN);
+  }

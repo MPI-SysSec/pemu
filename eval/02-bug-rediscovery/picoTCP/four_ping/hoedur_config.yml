@@ -1,0 +1,62 @@
+board:
+  init_nsvtor: 0x8000000
+network:
+  output: picotcp_output_four_ping.txt
+  ani: pemu.artificial_network_interface.ANI
+  apriori:
+  - field: TCPIP.IP6_dest
+    val: 0x20010db8130f0000000009c0876a130b
+  - field: TCPIP.IP6_source
+    val: 0x20010db8130f0000000009c0876a0001
+  - field: TCPIP.MAC_dest
+    val: 0x20100000000
+  protocols:
+    - protocol:
+      - Ethernet
+      - IP6
+      - ICMP6
+    - protocol:
+      - Ethernet
+      - IP6
+      - ICMP6
+    
+pemu_hooks:
+- address: 0x8022212 # HAL_ETH_ReadData
+  hook_type: receive
+  mcu: f7xx
+- address: 0x8020bfc # right after HAL_ETH_Transmit_IT call
+  hook_type: transmit
+  mcu: f7xx
+
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: true
+    interval: 1000
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x8000000
+    size: 0x3f400
+    file:
+      path: picotcp_ip4_ping.bin
+    type: rom
+
+symbols:
+  - picotcp_ip4_ping.elf

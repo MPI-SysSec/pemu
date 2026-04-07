@@ -1,0 +1,56 @@
+board:
+  init_nsvtor: 0x202000
+
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: false
+    interval: false
+    custom:
+      - name: idle_interrupt
+        symbol: platform_idle
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x202000
+    size: 0x8e000
+    file:
+      path: snmp-server.bin
+    type: rom
+
+mmio_models:
+  - context:
+      pc: 0x202f60
+      mmio: 0x40088828
+    model:
+      constant:
+        value: 0xff
+
+symbols:
+  - snmp-server.elf
+script: |
+  pub fn main(api) {
+    api.on_init(on_init);
+  }
+  
+  fn on_init() {
+    common::patch_function("fade", arm::RETURN);
+    common::patch_function("lpm_enter", arm::RETURN);
+    common::patch_function("printf", arm::RETURN);
+  }

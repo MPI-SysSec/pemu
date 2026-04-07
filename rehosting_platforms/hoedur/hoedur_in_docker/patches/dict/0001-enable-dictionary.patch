@@ -1,0 +1,24 @@
+From d9a5f9c7a523a954463fa974a3c6c62c63b366aa Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Simon=20W=C3=B6rner?= <git@simon-woerner.de>
+Date: Thu, 1 Jun 2023 13:53:19 +0200
+Subject: [PATCH] enable dictionary
+
+---
+ common/src/config.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common/src/config.rs b/common/src/config.rs
+index 88d37f92..12b1b9bc 100644
+--- a/common/src/config.rs
++++ b/common/src/config.rs
+@@ -110,7 +110,7 @@ pub mod fuzzer {
+     pub const MUTATOR_SPLICE: bool = true;
+     pub const MUTATOR_CHRONO_ERASE_VALUES: bool = true;
+     pub const MUTATOR_CHRONO_COPY_VALUE_PART: bool = true;
+-    pub const MUTATOR_DICTIONARY: bool = false;
++    pub const MUTATOR_DICTIONARY: bool = true;
+     pub const MUTATOR_INTERESTING_VALUE: bool = true;
+ 
+     pub const MUTATOR_DISTRIBUTION: [usize; 14] = [
+-- 
+2.40.1

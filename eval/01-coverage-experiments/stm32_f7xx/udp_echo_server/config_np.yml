@@ -1,0 +1,11 @@
+include:
+  - config.yml
+peripherals:
+  f7xx_periph:
+    base_addr: 0x40029000
+    class: fuzzware_harness.peripherals.stm32.f767_ethernet.ETH
+    ani: fuzzware_harness.network.artificial_network_interface.ANI
+    network: {}
+    irqs:
+    - 0x4d
+    size: 0x400

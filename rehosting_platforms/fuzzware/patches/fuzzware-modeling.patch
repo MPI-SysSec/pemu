@@ -1,0 +1,15 @@
+diff --git a/modeling/requirements.txt b/modeling/requirements.txt
+index fe3175b..7b9a7d2 100644
+--- a/modeling/requirements.txt
++++ b/modeling/requirements.txt
+@@ -1,4 +1,8 @@
+-rq==1.16.2
++click==7.1.2
++rq~=1.16
+ PyYAML>=5.3
+-angr==9.2.93
++intelhex
++capstone==5.0.3
++angr==9.2.61
+ IPython
++pycparser==2.21

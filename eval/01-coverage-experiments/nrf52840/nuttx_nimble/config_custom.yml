@@ -1,0 +1,16 @@
+boot: 
+  required:
+    - 0x2566c
+  avoid:
+    - 0x2ba32
+  target: 0x25522
+exit_at:
+  some_assert: 0x1f2d0
+
+memory_map:
+  ficr_uicr:
+    base_addr: 0x10000000
+    file: ../roms/apache_nrf52840_new_ficr_uicr.bin
+    permissions: rw-
+    overlay: true
+    size: 0x2000

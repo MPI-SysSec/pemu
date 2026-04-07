@@ -1,0 +1,67 @@
+# https://novelbits.io/deep-dive-ble-packets-events/
+# https://novelbits.io/bluetooth-low-energy-advertisements-part-1/
+# https://medium.com/rtone-iot-security/a-brief-overview-of-bluetooth-low-energy-79be06eab4df
+# Bluetooth Core v5.3 page 2699
+meta:
+  id: 0x10080
+  endian: be
+  
+header:
+  RFU:
+    type: data
+    size: b2
+    value: 0
+    doc: Reserved for future use
+
+  CP:
+    type: condition
+    size: b1
+    bitmask: [CTEInfo]
+    doc: CTEInfo Present
+
+  MD:
+    type: fuzzed
+    size: b1
+    doc: More data
+    
+  SN:
+    type: fuzzed
+    size: b1
+    doc: Sequence number
+
+  NESN:
+    type: fuzzed
+    size: b1
+    doc: Next expected sequence number
+
+  # LLID
+  # 0b00 = Reserved for future use
+  # 0b01 = LL Data PDU: Continuation fragment of an L2CAP message, or an
+  # Empty PDU.
+  # 0b10 = LL Data PDU: Start of an L2CAP message or a complete L2CAP mes-
+  # sage with no fragmentation.
+  # 0b11 = LL Control PDU
+  LLID:
+    type: handler
+    size: b2
+    handler: ble_handle_llid
+    doc: Indicates whether the packet is an LL Data PDU or an LL Control PDU
+
+  length:
+    type: length
+    size: 1
+    scope: body
+    format: b
+    doc: Length in bytes of payload
+
+  CTEInfo:
+    type: conditional
+    size: 1
+    doc: Indicates the type and length of the Constant Tone Extension.
+
+body:
+  size: fuzzed
+  max: 251
+  
+
+

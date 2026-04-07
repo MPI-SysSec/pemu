@@ -1,0 +1,56 @@
+meta:
+  id: 0x10008
+  endian: be
+
+header:
+  # this is the extended header core_v5.3 p2691
+  # 2.3.3.2 AUX_CONNECT_RSP
+  advMode:
+    type: data
+    size: b2
+    value: 0
+    doc: The AdvMode field shall be set to 0b00. Other values are not allowed
+
+  extended_header_length:
+    type: data
+    size: b6
+    value: 0xd
+    doc: Length of the extended header
+
+  # now the variable extended header flags; table 2.10; page 2691
+  # bits      extended header                 Fields set by advMode
+  # ----------------------------------------------------------------
+  # 0         AdvA                            mandatory
+  # 1         TargetA                         mandatory
+  # 2         CTEInfo                         reserved 
+  # 3         AdvDataInfo (ADI)               reserved
+  # 4         AuxPtr                          reserved
+  # 5         SyncInfo                        reserved
+  # 6         TxPower                         reserved
+  # 7         Reserved for future use         reserved
+  
+  extended_header_flags:
+    type: data
+    size: 1
+    value: 0xc0
+    doc: The bits define which header fields are used
+  
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.AdvA
+    doc: Advertiser's address
+
+  TargetA:
+    type: reference
+    size: 6
+    reference: BLE.TargetA
+    doc: Target's address
+
+   
+
+body:
+  size: fuzzed
+  max: 254
+
+

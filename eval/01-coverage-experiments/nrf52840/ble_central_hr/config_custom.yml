@@ -1,0 +1,66 @@
+limits:
+  fuzz_consumption_timeout: 500000
+handlers:
+  vprintk:
+  z_impl_z_log_msg_static_create:
+interrupt_triggers:
+  idle_loop:
+    addr: 0x24778 #main idle loop
+    fuzz_mode: fuzzed
+
+exit_at:
+  sys_reboot: 0x189cc
+  sys_arch_reboot: 0x1a09c
+  platform_abort: 0x27648
+  sdc_assert_fail: 0x222e4
+  assert: 0x230c4
+  pre_gpio_assert: 0x234f6
+
+memory_map:
+  ficr_uicr:
+    base_addr: 0x10000000
+    file: ../roms/nrf52840_new_ficr_uicr.bin
+    permissions: rw-
+    size: 0x2000
+  weird_nvic_e000ed90:
+    overlay: true
+    base_addr: 0xe000ed90
+    permissions: rw-
+    size: 0x4
+    file: ../roms/zephyr_nvic.bin
+
+
+  # until 0x10000000
+  flash:
+    base_addr: 0x49000
+    size: 0xffb7000
+    permissions: rw-
+
+
+
+  flash_overlay:
+    base_addr: 0xf8000
+    overlay: True
+    permissions: rw-
+    size: 0x1000
+    file: ../roms/flash_extract_f8000.bin
+
+  flash_second_overlay:
+    base_addr: 0xf9000 
+    permissions: rw-
+    size: 0xbdbec
+    overlay: True
+    file: ../roms/chunky_flash.bin
+
+mmio_models:
+  passthrough:
+    pc_00285fa_mmio_5002b130:
+      access_size: 0x4
+      addr: 0x5002b130
+      init_val: 0x0
+      pc: 0x285fa
+    pc_00288f8_mmio_5002b130:
+      access_size: 0x4
+      addr: 0x5002b130
+      init_val: 0x0
+      pc: 0x288f8

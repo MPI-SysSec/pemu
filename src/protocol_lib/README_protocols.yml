@@ -1,0 +1,195 @@
+# This file aims to show all the different configuration options for protocol definitions
+
+# It is mandatory to include a meta section that contains
+meta:
+  # The ID as defined in the protocols.yml file
+  id: 
+  # The endianess, i.e., big or little endian
+  endian: be/le
+  # (opt) If the endianess of the individual fields needs to specified
+  field_endian: le
+  # (opt) handshake
+  handshake: 2
+
+
+# Next we always need to include a header section
+header:
+
+  # However if the protocol does not need/use a header it is possible to add a dummy header
+  # with size 0
+  dummy_header:
+    type: fuzzed
+    size: 0
+    doc: Just a dummy header
+
+  # In general, each header field NEEDS 
+  header_prototype:
+    # a type, which can take any of the following values
+    type: fuzzed/data/handler/condition/conditional/nested/length/reference/checksum/pointer
+    # and a size either in bitwise (bX) or in bytewise granularity
+    size: bX/X
+    # optionally you can add information on the field
+    doc: ...
+
+  # Depending on the type, header fields need further information
+  # Therefore, some examples and prototypes
+
+  # fuzzed - This field is filled with a random value of a given size
+  fuzzed_prototype:
+    type: fuzzed
+    size: bX/X
+
+  # fuzzed - With the ephemeral flag, the value is changed on every iteration
+  ephemeral_fuzzed_prototype:
+    type: fuzzed
+    ephemeral: True
+    size: bX/X
+
+  # data - This field is filled with a preset value padded to a certain size
+  data_prototype:
+    type: data
+    value: 
+    size: 
+
+  # handler - This  field is filled with the result of a handler function, which is specified
+  # in handler.py. Very powerful as it can access the entire header and also the header of the 
+  # next upper layer
+  handler_prototype:
+    type: handler
+    handler: my_custom_handler
+    size:
+
+  # condition - This field determines wether other conditional fields exist for this packet.
+  # The condition is implemented in a handler (in handler.py) and is responsible for dealing 
+  # with the conditional fields.
+  condition_prototype_handler:
+    type: condition
+    cond_handler:
+    size:
+  
+  # Here the condition is implemented via bitmask. I.e., hte field is fuzzed, handler(ed) or given by a value.
+  # The value is used as a bitmask and a applied to the given list. On 0 a conditional list item is masked out
+  # and on 1 the field is used. 
+  condition_prototype_bitmask:
+    type: condition
+    bitmask: [contitional1, conditional2, conditoinal3]
+    size: #should be len(bitmask) or larger!
+
+  # conditional - This fields existence is dependent on a condition field. If no condition is 
+  # evaluated this field is by default regarded as fuzzed
+  # The condition handler or the bitmask eval
+  conditional_prototype:
+    type: conditional
+    size:
+
+  # nested - This field is reather complex and a little bit hacky
+  # We can supply a nested handler, which can mask the entire header or certain fields (in handler.py)
+  # We can also supply an action (implemented by handler), which means the nested handler is executed earlier
+  # Afterward, meta and header are simply inlined and assembled the usualy way
+  nested_prototype:
+    type: nested
+    nested: my_nested_handler
+    action: fragmentation/compression
+    size:
+
+    meta:
+      id:
+      endian:
+    header:
+      field1:
+        type: fuzzed
+        size: bX/X
+      field2:
+        type: fuzzed
+        size: bX/X
+
+  # length - This field refers to the length of a given unit
+  # This unit can be defined under scope.
+  # Additionally a format can be defined, i.e, whether to count bytes, words or dwords
+  length_prototype:
+    type: length
+    size:
+    format: b/w/d
+    scope: header/body/all
+
+  # reference - This field allows to reference header fields in other layers
+  # Referencing and knowledge base
+  # Instead of referencing specific header fields of other protocols
+  # we may also reference general information, which we store in a so 
+  # called knowledge base.
+  # This knowledge base can be refernced by the syntax
+  # <network-stack>.<field>, where
+  # network-stack is in [TCPIP, BLE, 6LOWPAN], and 
+  # field is in [ IP4_source, # ip4 address of the 'network'    --+
+  #               IP4_dest,   # ip4 address of the firmware       |
+  #               IP6_source  # ip6 address of the 'network'      |
+  #               IP6_dest,   # ip6 address of the firmware       +- TCPIP
+  #               MAC_source, # MAC address of the 'network'      |
+  #               MAC_dest,   # MAC address of the firmware     --+
+  #               PAN_source, # PAN ID of the 'network'         --+    
+  #               PAN_dest,   # PAN ID of the firmware            |
+  #               LL_source   # Link-Layer addr of the 'network'  +- IEEE802154
+  #               LL_dest   # Link-Layer addr of the firmware   --+
+  #               AdvA,       # Address of the 'network'        --+
+  #               TargetA    # Address of the firmware         --+- BLE
+  #             ]  
+  reference_prototype:
+    type: reference
+    size:
+    # reference by PROTOCOL_NAME.FIELD_NAME
+    reference: ARP.sha
+    # reference by to knowledge base
+    reference: TCPIP.IP4_source
+
+  # checksum - Thiss field contains a checksum calculated by a given function (in checksum.py)
+  # The function is responsible for the calculation, hence the scope is more  debug info
+  checksum_prototype:
+    type: checksum
+    size:
+    checksum: my_checksum_function
+    scope: header/body/all/custom 
+
+  # pointer - This field holds the ID of the next higher layer & 0xffff
+  pointer_prototype:
+    type: pointer
+    size:
+
+  # misc: opague fields: Opague fields are not assemble and not 'consumed' when parsing hte packet
+  # However, they ma be necessary for parsing to infer the field type (i.e., IEEE802154) 
+  opaque_field:
+    type:
+    size:
+    opque: true
+
+
+# Last we always need to include a body section
+# If none of the optional flags is given the body is just fuzzed
+body:
+  size: int/fuzzed
+  # (opt) value
+  value:
+  # (opt) handler
+  handler:
+
+
+
+
+  # Assembly and evaluation:
+  # Fields are evaluated in the following order
+  # 1. conditions
+  # 2. defined actions like compression & fragmentation
+  # 3. Nested fields recursively
+  # 4. All pointers and bitoffsets are calculated
+  # 5. Data fields
+  # 6. Fuzzed fields
+  # 7. Reference fields
+  # 8. Pointer fields
+  # 9. Conditional fields
+  # 10. Checksum fields are zeroed out
+  # 11. Handler fields
+  # 12. Length fields
+  # 13. Header is assembled
+  # 14. Checksum is calculated
+  # Later: If any checksums rely on pseudoheaders, they are evluated later on
+  
+  

@@ -1,0 +1,100 @@
+meta:
+  id: 68
+  endian: be
+
+header:
+  op:
+    type: data
+    size: 1
+    value: 2 # by default we always send replies
+    doc: Information if request (1) or reply (2)
+
+  htype:
+    type: data
+    size: 1
+    value: 6 # so far always eth
+    doc:  Network type (e.g., 1 = Ethernet, 6 = IEEE 802 networks)
+
+  hlen:
+    type: data
+    size: 1
+    value: 6 # as we have only eth so far
+    doc: Length of physical network address (e.g., 6 for ethernet)
+
+  hops:
+    type: data
+    size: 1
+    value: 0
+    doc: Optional. Number of DHCP-Relay-Agents
+
+  xid:
+    type: fuzzed
+    # needs to be taaken from the packet, however by default fuzzed
+    size: 4
+    doc: ID of connection between server and client
+
+  secs:
+    type: data
+    size: 2
+    value: 0
+    doc: Time in seconds since starting the client
+
+  flags:
+    type: data
+    size: 2
+    value: 0
+    doc: First bit shows if client as an IP address
+
+  ciaddr: 
+    type: data
+    size: 4
+    value: 0
+    doc: client IP address
+
+  yiaddr:
+    type: reference
+    size: 4
+    reference: TCPIP.IP4_dest
+    doc: Own IP address
+
+  siaddr:
+    type: reference
+    size: 4
+    reference: TCPIP.IP4_source
+    doc: Server IP address
+
+  giaddr:
+    type: data   
+    size: 4
+    value: 0
+    doc: relay agent IP address
+
+  chaddr:
+    type: reference
+    size: 16
+    reference: TCPIP.MAC_dest
+    value: 0
+    doc: Client MAC address
+
+  sname:
+    type: data
+    size: 64
+    value: 0
+    doc: Optional. Null terminated c string
+
+  file:
+    type: data
+    size: 128
+    value: 0
+    doc: Optional; Boot file name, null terminated string or null in dhcpdiscorver, fully qualified directory name in dhcpoffer
+
+  options:
+    type: handler
+    size: 0
+    handler: dhcp_handle_options
+    doc: As options are type-length-value fields use handler to assemble them; handler will also overwrite the size to fit accurately
+
+
+body:
+  size: 0
+

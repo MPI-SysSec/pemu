@@ -1,0 +1,35 @@
+meta:
+  id: 0x50001
+  endian: be
+
+header:
+  id:
+    type: fuzzed
+    size: 1
+    doc: slave address between 1 and 247, 0 is broadcast
+  fct: 
+    type: fuzzed
+    ephemeral: true
+    size: 1
+    options: [1,2,3,4,5,6,15,16]
+    doc: Function code
+  remaining_len:
+    type: length
+    ephemeral: true
+    size: 1
+    doc: following bytes
+  modbus_data:
+    type: handler
+    handler: modbus_data
+    ephemeral: true
+    size: 1
+    doc: body
+  crc:
+    type: checksum
+    checksum: modbus_crc
+    scope: header
+    size: 2
+    doc: crc
+
+body:
+  size: 0

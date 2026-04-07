@@ -1,0 +1,32 @@
+include:
+  - config.yml
+handlers:
+  write_len_hook:
+    addr: 0x202f60 
+    handler: fuzzware_harness.user_hooks.npfuzz.np_cc2538.ti_hook_1
+    do_return: false
+
+  write_data_hook:
+    addr: 0x202fce
+    handler: fuzzware_harness.user_hooks.npfuzz.np_cc2538.ti_hook_2
+    do_return: false
+
+  udma_channel_get_mode_hook:
+    addr: udma_channel_get_mode
+    handler: fuzzware_harness.user_hooks.npfuzz.np_cc2538.ti_hook_3
+    do_return: false
+
+  tx_hook:
+    addr: 0x203368
+    do_return: false
+    handler: fuzzware_harness.user_hooks.npfuzz.np_cc2538.ti_hook_tx
+
+
+peripherals:
+  dummy_peripheral:
+    base_addr: 0x40001000
+    size: 0
+    class: fuzzware_harness.peripherals.Peripheral
+    global_ani: true
+    ani: fuzzware_harness.network.artificial_network_interface.ANI
+    network: {}

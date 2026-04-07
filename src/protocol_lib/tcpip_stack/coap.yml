@@ -1,0 +1,55 @@
+meta:
+  id: 5683
+  endian: be
+
+header:
+  ver:
+    type: fuzzed
+    size: b2
+    doc: CoAP version number
+
+  type:
+    type: fuzzed
+    size: b2
+    doc: 0&1 are requests (confirmalble/non-confirmable) and 2&3 are response (Acknowledgement/reset)
+
+  token_length:
+    type: length
+    size: b4
+    scope: token
+    format: b
+    doc: size of the variable length token field
+
+  code:
+    type: fuzzed
+    size: 1
+    ephemeral: true
+    doc: request/response code -> 3 bits class, 5 bits code. Analogous to the HTTP Statuc codes
+
+  message_id:
+    type: fuzzed
+    size: 2
+    doc: Value to detect message duplication
+
+  token:
+    type: fuzzed
+    size: 0
+    doc: 0 - 8 bytes. Set by the client and needs to be echoed back by the server
+
+  options:
+    type: fuzzed
+    size: 4
+    doc:
+
+  footer:
+    type: data
+    size: 1
+    value: 0xff
+    doc: footer of the header
+  
+
+
+body:
+  size: fuzzed
+  
+

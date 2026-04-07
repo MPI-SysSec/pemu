@@ -1,0 +1,15 @@
+meta:
+  id: 0x10006
+  endian: be
+
+header:
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.AdvA
+    doc: Advertiser's address
+
+# maximum size is 31, may be less
+body:
+  size: fuzzed
+  max: 31

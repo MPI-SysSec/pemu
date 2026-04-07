@@ -1,0 +1,77 @@
+board:
+  init_nsvtor: 0x8000000
+
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: true
+    interval: 1000
+network: 
+  ani: pemu.artificial_network_interface.ANI
+  np_only: true
+  faults:
+    probability: 0x14
+    target: all
+  output: f7xx_udp_echo_output.txt
+  apriori:
+    - field: DHCP.chaddr
+      val: 0x80e100000000000000000000000000
+    - field: DHCP.xid
+      val: 0x5851f42d
+    - field: TCPIP.MAC_dest
+      val: 0x80e1000000
+  protocols:
+    - protocol: [Ethernet, IP4, UDP, DHCP]
+    - protocol: [Ethernet, IP4, UDP, DHCP]
+    - protocol: [Ethernet, IP4, UDP]
+    - protocol: [Ethernet, ARP]
+    - protocol: [Ethernet, IP4, UDP]
+
+pemu_hooks:
+  - address: 0x8002202 # HAL_ETH_ReadData
+    hook_type: receive
+    mcu: f7xx
+  - address: 0x80063d6 # just after HAL_ETH_Transmit_IT
+    hook_type: transmit
+    mcu: f7xx
+  #- address: 0x800d2dc # udp receive
+  #  hook_type: crash
+  #  mcu: f7xx
+  #- address: 0x8000f98 
+  #- address: 0x800afb8
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x8000000
+    size: 0x24c00
+    file:
+      path: Nx_UDP_Echo_Server.bin
+    type: rom
+
+symbols:
+  - Nx_UDP_Echo_Server.elf
+script: |
+  pub fn main(api) {
+    api.on_init(on_init);
+  }
+  
+  fn on_init() {
+    common::patch_address(0x801325C, arm::RETURN); // 0x801325c
+    common::patch_function("puts", arm::RETURN);
+  }

@@ -1,0 +1,33 @@
+meta:
+  id: 0x01
+  endian: be 
+
+
+header:
+  type:
+    type: fuzzed
+    size: 1
+    ephemeral: true
+    options: [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 42, 43, 253, 254, -1]
+    doc: message type
+  code:
+    type: fuzzed
+    size: 1
+    ephemeral: true
+    options: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -1] 
+    doc: message code is dependet on the type
+  checksum:
+    type: fuzzed
+    ephemeral: true
+    size: 2
+    doc: TODO icmp4 checksum includes a ip4 pseude header
+  rest_of_header:
+    type: fuzzed
+    ephemeral: true
+    size: 4
+
+body:
+  size: fuzzed
+
+
+

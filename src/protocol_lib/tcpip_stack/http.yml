@@ -1,0 +1,11 @@
+meta:
+  id: 80
+  endian: be
+
+header:
+  dummy_header:
+    size: 0
+    type: fuzzed
+
+body:
+  size: fuzzed

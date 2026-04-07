@@ -1,0 +1,22 @@
+include:
+- config.yml
+
+peripherals:
+  dummy_peripheral:
+    base_addr: 0x40001000
+    size: 0
+    class: fuzzware_harness.peripherals.Peripheral
+    global_ani: true
+    ani: fuzzware_harness.network.artificial_network_interface.ANI
+    network: {}
+
+
+handlers:
+  rx_hook:
+    addr: 0x25532
+    handler: fuzzware_harness.user_hooks.npfuzz.np_nrf52840_nimble.nrf52_hook_rx
+    do_return: false
+  tx_hook:
+    addr: 0x2b998
+    handler: fuzzware_harness.user_hooks.npfuzz.np_nrf52840_nimble.nrf52_hook_tx
+    do_return: false

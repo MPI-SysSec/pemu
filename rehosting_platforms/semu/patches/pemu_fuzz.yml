@@ -1,0 +1,11 @@
+f429/LwIP_TCP_Echo_Client/LwIP_TCP_Echo_Client.elf:
+  rules: '../../RuleExtraction/extractedRules/f429.txt'
+  fork_points: 
+  - 0x8000D2C # "the start point of loop in main"
+  systick_reload: 500 # there is a random eth start, check depends on systick, so recommend decreasing systick interval
+
+f429/LwIP_TCP_Echo_Server/LwIP_TCP_Echo_Server.elf:
+  rules: '../../RuleExtraction/extractedRules/f429.txt'
+  fork_points: 
+  - 0x8000D0C # "the start point of loop in main"
+  systick_reload: 500 # there is a random eth start, check depends on systick, so recommend decreasing systick interval

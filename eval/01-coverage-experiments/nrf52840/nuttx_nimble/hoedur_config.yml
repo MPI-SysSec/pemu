@@ -1,0 +1,60 @@
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: true
+    interval: 1000
+
+network:
+  ani: pemu.artificial_network_interface.ANI
+  output: nrf52_nuttx_nimble_output.txt
+  faults:
+    probability: 0x14
+    target: all
+  np_only: true
+  apriori:
+    - field: BLE.TargetA
+      val: 0x5fbed099a736
+  protocols:
+    - protocol: [BLE_PHY, BLE_adv_channel_pdu, BLE_adv_CONNECT_IND]
+
+pemu_hooks:
+  - address: 0x25532
+    hook_type: receive
+    mcu: nrf52
+  - address: 0x2b998
+    hook_type: transmit
+    mcu: nrf52
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x0
+    size: 0x10000000
+    file:
+      path: nuttx.bin
+    type: rom
+  - name: ficr_uicr
+    address: 0x10000000
+    size: 0x2000
+    file:
+      path: "../roms/apache_nrf52840_new_ficr_uicr.bin"
+    type: ram
+
+exit_hooks:
+  - name: some_assert
+    pc: 0x1f2d0

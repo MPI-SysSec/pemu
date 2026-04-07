@@ -1,0 +1,19 @@
+# https://www.sharetechnote.com/html/IoT/LR_WPAN_802_15_4.html
+meta:
+  id: 0x20002
+  endian: be
+  field_endian: le
+
+header:
+  frame_control:
+    type: data
+    size: 2
+    value: 0x2
+    doc: frame control is essentially like a flag field, where each bit encodes different informatio
+  sequence_number:
+    type: fuzzed
+    size: 1
+    doc: regular sequence number 
+
+body: 
+  size: 0

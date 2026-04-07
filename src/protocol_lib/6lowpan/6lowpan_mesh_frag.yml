@@ -1,0 +1,79 @@
+#https://datatracker.ietf.org/doc/html/rfc4944#section-2 @section 5
+meta:
+  id: 0x20006
+  endian: be
+
+header:
+  mesh_header:
+    type: nested
+    nested: sixlowpan_mesh_handler
+    meta:
+      id: 0x10005
+      endian: be
+    header:
+      pattern: 
+        type: data
+        size: b2
+        data: 0x2
+        doc: dispatch pattern for the mesh header
+
+      v_ery_first:
+        type: handler
+        handler: default_handler
+        size: b1
+        doc:
+      
+      f_inal:
+        type: handler
+        handler: default_handler
+        size: b1
+        doc:
+
+      hops_left:
+        type: fuzzed
+        size: b4
+
+      originator_address:
+        type:
+        size: 
+        doc: link layer address of the originator
+
+      final_address:
+        type:
+        doc: link layer address of the final destination
+
+    doc: Mesh header is used to perform link layer routing. Therefore probably not as important for fuzzing as this header is most likely just stripped
+
+  fragmentation_header:
+    type: nested
+    size: 5
+    action: fragmentation
+    nested: sixlowpan_fragmentation_handler
+    meta: 
+      id: 0x10051
+      endian: be
+    header: 
+      pattern:
+        type: data
+        size: b5
+        doc: dispatch value for either the first or subsequent fragment
+
+      datagram_size: 
+        type: length
+        size: b11
+        doc: length of the entire datagram
+
+      datagram_tag:
+        type: fuzzed
+        size: 2
+        doc: Same for all link fragments of  a payload; incremented for the subsequent datagram
+
+      datagram_offset:
+        type: fuzzed
+        size: 1
+        ephemeral: True
+        doc: only present in second and subsequent fragments
+    doc: test
+
+body:
+  size: fuzzed

@@ -1,0 +1,39 @@
+# https://www.sharetechnote.com/html/IoT/LR_WPAN_802_15_4.html
+meta:
+  id: 0x20003
+  endian: be
+  field_endian: le
+
+header:
+  frame_control:
+    type: condition
+    size: 2
+    cond_handler: ieee802154_mac_command_fcf
+    doc: frame control is essentially like a flag field, where each bit encodes different informatio
+  sequence_number:
+    type: fuzzed
+    size: 1
+    doc: regular sequence number; TODO handler
+  destination_PAN:
+    type: reference
+    reference: IEEE802154.PAN_dest
+    doc: The existence and size of the destination PAN depends on the frame control field  
+  destination_addr:
+    type: reference
+    reference: IEEE802154.LL_dest
+    doc: The existence and size of the destination address depends on the frame control field
+  source_PAN:
+    type: reference
+    reference: IEEE802154.PAN_source
+    doc: The existence and size of the source PAN depends on the frame control field
+  source_addr:
+    type: reference
+    reference: IEEE802154.LL_source
+  auxillary_security_header:
+    type: conditional
+    doc: The existence and size of the aux security header depends on the frame control field
+  
+
+body: 
+  size: fuzzed
+  max: 100

@@ -1,0 +1,21 @@
+meta:
+  id: 0xfff
+  endian: be
+  field_endian: le
+
+header:
+  length:
+    type: length
+    size: 1
+    scope: body
+    format: b
+    doc: length of the body
+
+  fcf:
+    type: handler
+    size: 2
+    handler: generic_fcf
+    opaque: true
+
+body:
+  size: fuzzed

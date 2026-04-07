@@ -1,0 +1,30 @@
+meta:
+  id: 0x2
+  endian: be 
+
+header:
+  type:
+    type: fuzzed
+    size: 1
+    ephemeral: true
+    options: [0x11, 0x12, 0x16, 0x22, 0x17, -1]
+    doc: message type
+  max_resp_time:
+    type: fuzzed
+    size: 1
+    options: [0, -1]
+    doc: message code is dependet on the type
+  checksum:
+    type: fuzzed
+    ephemeral: true
+    size: 2
+    doc: TODO icmp4 checksum includes a ip4 pseude header
+  group_addr:
+    type: fuzzed
+    size: 4
+
+body:
+  size: fuzzed
+
+
+

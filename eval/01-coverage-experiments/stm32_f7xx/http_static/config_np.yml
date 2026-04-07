@@ -1,0 +1,14 @@
+include:
+  - config.yml
+
+peripherals:
+  f7xx_periph:
+    packet_limit: 30
+    class: fuzzware_harness.peripherals.stm32.f767_ethernet.ETH
+    base_addr: 0x40029000
+    size: 0x400
+    ani: fuzzware_harness.network.artificial_network_interface.ANI
+    network: {}
+    irqs:
+      # ETH_IRQHandler
+      - 77

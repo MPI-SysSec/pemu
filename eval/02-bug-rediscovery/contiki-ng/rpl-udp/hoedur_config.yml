@@ -1,0 +1,72 @@
+board:
+  init_nsvtor: 0x202000
+
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: false
+    interval: false
+    custom:
+      - name: idle_interrupt
+        pc: 0x20cbda
+
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x202000
+    size: 0x8e000
+    file:
+      path: udp-server.cc2538dk.bin
+    type: rom
+network:
+  output: contikit-output_enabled.txt
+  ani: pemu.artificial_network_interface.ANI
+  apriori:
+  - field: IEEE802154.PAN_dest
+    val: 0xffff
+  - field: IEEE802154.PAN_source
+    val: 0xabcd
+  - field: TCPIP.IP6_dest
+    val: 0xfd000000000000000200000000000000
+  - field: TCPIP.IP6_source
+    val: 0xfd00000000000000000000fffe000000
+  protocols:
+  - protocol:
+    - IEEE802154_PHY
+    - 6lowpan_MAC_Data
+    - 6lowpan_mesh_frag
+    - 6lowpan
+    - TCP
+    - HTTP
+pemu_hooks:
+- address: 0x2025ec
+  hook_type: receive
+  mcu: contiki-cc2538
+- address: 0x2029b8
+  hook_type: transmit
+  mcu: contiki-cc2538
+script: |
+  pub fn main(api) {
+    api.on_init(on_init);
+  }
+  
+  fn on_init() {
+    common::patch_address(0x20CB6E, arm::RETURN); // fade
+    common::patch_address(0x204340, arm::RETURN); // lpm_enter
+    common::patch_address(0x204C48, arm::RETURN); // printf
+  }

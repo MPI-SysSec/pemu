@@ -1,0 +1,19 @@
+meta:
+  id: 0x10003
+  endian: be
+
+header:
+  ScanA:
+    type: reference
+    size: 6
+    reference: BLE.AdvA
+    doc: Advertiser's address
+
+  AdvA:
+    type: reference
+    size: 6
+    reference: BLE.TargetA
+    doc: Target's address
+
+body:
+  size: 0

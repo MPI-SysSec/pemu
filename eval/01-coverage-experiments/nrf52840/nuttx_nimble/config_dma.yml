@@ -1,0 +1,14 @@
+include:
+- config.yml
+
+peripherals: {}
+
+handlers:
+  rx_hook:
+    addr: 0x25532
+    handler: fuzzware_harness.user_hooks.npfuzz.nrf52840_nimble.nrf52_hook_rx
+    do_return: false
+  tx_hook:
+    addr: 0x2b998
+    handler: fuzzware_harness.user_hooks.npfuzz.nrf52840_nimble.nrf52_hook_tx
+    do_return: false

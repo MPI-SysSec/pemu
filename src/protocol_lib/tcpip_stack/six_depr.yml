@@ -1,0 +1,70 @@
+meta:
+  id: 0x86dd
+  endian: be 
+
+
+header:
+  version:
+    type: data
+    value: 6
+    size: b4
+    doc: constant version
+  
+  traffic_class_ds:
+    type: data
+    size: b6
+    value: 0
+    doc: differentiated services field; always ends on 0
+  
+  traffic_class_ecn:
+    type: data
+    size: b2
+    value: 0
+    doc: explicit congestion notification
+
+  compression_padding:
+    type: data
+    size: 0
+    value: 0
+    doc: paddin that can be resized in the case of compression
+
+  flow_label:
+    type: data
+    size: b20
+    value: 0
+    doc: label that associates packet with group of packets
+
+  payload_len:
+    type: length
+    size: b16
+    format: b
+    scope: header
+    doc: The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop extension header carries a Jumbo Payload option.
+
+  next_header:
+    type: pointer
+    size: 1
+    doc: specifies the type of the next header; values are the same as with ip4
+
+  hop_limit:
+    type: fuzzed
+    size: 1
+    doc: equal to ttl in ip4
+
+  source_addr:
+    type: reference
+    size: 16
+    reference: TCPIP.IP6_source
+    doc: ip6 addr of the sending node
+  
+  destination_addr:
+    type: reference
+    size: 16
+    reference: TCPIP.IP6_dest
+    doc: ip6 addr of the receiving node
+
+body:
+  size: fuzzed
+
+
+

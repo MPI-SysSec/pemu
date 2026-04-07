@@ -1,0 +1,34 @@
+meta:
+  id: 17
+  endian: be
+
+header:
+  source:
+    type: handler
+    handler: handle_udp_source
+    size: 2
+    doc: Source port. In some cases the firmware looks for correct source values. E.g., DHCP implementations
+
+  destination:
+    type: pointer
+    size: 2
+    default: 6000
+    doc: Destination port.
+
+  length:
+    type: length
+    size: 2
+    format: b
+    scope: all      
+    doc: Length of the UDP header (always 8) and payload
+
+  udp_checksum:
+    type: data
+    value: 0
+    size: 2
+    doc: Checksum of the header and the data. Optional for ipv4
+
+body:
+  size: fuzzed
+  
+

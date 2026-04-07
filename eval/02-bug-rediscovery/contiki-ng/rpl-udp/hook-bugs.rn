@@ -1,0 +1,42 @@
+pub fn main(api) {
+    api.on_instruction(Some(0x20b2d0), verify_cve_2021);
+    api.on_instruction(Some(0x20d1f4), verify_cve_2022);
+
+}
+
+
+fn verify_cve_2022(pc) {
+  //r3 curr_hdr_len
+  //r1 size
+  let size = register::read("R1")?;
+  let curr_hdr_len = register::read("R3")?;
+  let struct_size = 2;
+  if curr_hdr_len + struct_size > size {
+
+    log::error!("FOUND CVE: size: {:x}, curr_hdr_len: {:x}", size, curr_hdr_len);
+    input::add_bug("CVE-2022-26053");
+
+    }
+
+}
+fn verify_cve_2021(pc) {
+  let UIP_HLEN = 0x28;
+  log::error!("Reached CVE check");
+  let uip_len_ptr = register::read("R6")?;
+  let uip_len = memory::read_u16(uip_len_ptr)?;
+  log::error!("uip_len is {:x}", uip_len);
+
+  let tcp_offset_ptr = register::read("R8")?;
+  let tcp_offset= memory::read_u8(tcp_offset_ptr + 0xc)?;
+  log::error!("tcpoffset is {:x}", tcp_offset);
+
+  let c = (tcp_offset >> 4) << 2;
+  log::error!("c is {:x}", c);
+  log::error!("new uip_len is {:x}", uip_len -0x28 -c);
+  if uip_len < c + UIP_HLEN {
+      log::error!("==========================");
+      log::error!("FOUND CVE 2021");
+      log::error!("==========================");
+      input::add_bug("CVE-2021-21281");
+    }
+}

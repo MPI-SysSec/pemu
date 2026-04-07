@@ -1,0 +1,24 @@
+meta:
+  id: 420
+  endian: le
+
+header:
+  dest:
+    type: reference
+    size: 6 
+    reference: TCPIP.MAC_dest
+    doc: Destination MAC address.
+  src:
+    type: reference
+    size: 6
+    reference: TCPIP.MAC_source
+    doc: Source MAC address
+  type:
+    type: pointer
+    size: 2 
+    doc: Type of the ethernet payload. In general we are expecting ip4 here
+
+body:
+  size: fuzzed
+
+

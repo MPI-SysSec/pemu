@@ -1,0 +1,3 @@
+include:
+  - config_custom.yml
+  - config_autogen.yml

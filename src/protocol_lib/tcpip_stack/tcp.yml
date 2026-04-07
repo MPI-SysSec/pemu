@@ -1,0 +1,87 @@
+meta:
+  id: 6
+  endian: be
+  handshake: 2
+
+header:
+  source:
+    type: fuzzed
+    size: 2
+    doc: Source port.
+  destination:
+    type: pointer
+    size: 2
+    doc: Destination port.
+  sqn:
+    type: handler
+    size: 4
+    handler: handle_ack_sqn
+    doc: Sequence number.
+  ack:
+    type: handler
+    size: 4
+    handler: handle_ack_sqn
+    doc: Acknowledgement number.
+  offset:
+    type: length
+    scope: header
+    format: d
+    size: b4      
+    doc: Data offset.
+  reserved:
+    type: data
+    size: b3
+    value: 0
+    doc: Reserved and always set to 0 (except for fuzz testing purposes maybe).
+  flags:
+    type: handler
+    size: b9
+    handler: tcp_handle_flags
+    doc: Flags (e.g., FIN, SYN, ...). Maybe make them as single fields.
+  window_size:
+    type: fuzzed
+    size: 2
+    doc: Size of the receive window.
+  tcp_checksum:
+    type: checksum
+    size: 2
+    scope: custom
+    checksum: tcp_checksum
+    doc: TCP checksum of header, payload, and IP pseudo header
+  urgent_pointer:
+    type: fuzzed
+    size: 2
+    doc: If URG flag is set, this field indicates an offset.
+  option_type:
+    type: fuzzed
+    size: 1
+    ephemeral: true
+    options: [2, 3, 4, 5, 8, 28, 29, 30, -1]
+
+  option_length:
+    type: length
+    format: b
+    size: 1
+    scope: option_data
+
+
+  option_data: 
+    type: handler
+    size: 1
+    handler: handle_tcp_option
+
+
+  option_padding:
+    type: data
+    value: 0
+    size: 0
+    doc: optional padding, that can be resized
+  
+  options:
+    type: fuzzed
+    size: 0 #TODO
+    doc: Options if data_offset > 5. Padded with 0's if neccessary.
+
+body:
+  size: fuzzed
+

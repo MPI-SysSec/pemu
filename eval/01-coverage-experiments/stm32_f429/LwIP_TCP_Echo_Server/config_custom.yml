@@ -1,0 +1,53 @@
+exit_at:
+  DMA1_Stream3_IRQHandler: 0x80005e4
+
+handlers:
+  HAL_Delay_skip:
+    addr: HAL_Delay
+  LCD_Draw_char_skip:
+    addr: BSP_LCD_DisplayChar
+  puts_skip:
+    addr: puts
+  DHCP_periodic_handle_timer_skip:
+    # Overwrite compare instruction to increase the frequency
+    addr: 0x080007ce
+    handler: native.inline_asm_B0F1100F
+
+nvic:
+  disabled_irqs:
+  # 48 - 16
+  - 32
+  - 56
+  - 31  
+
+memory_map:
+  fsmc_region:
+    # for interfacing with (a)synchronous memories
+    base_addr: 0xa0000000
+    size: 0x1000
+    permissions: rw-
+  bank1:
+    base_addr: 0x60000000
+    size: 0x10000000
+    permissions: rw-
+  bank2:
+    base_addr: 0x70000000
+    size: 0x10000000
+    permissions: rw-
+  bank3:
+    base_addr: 0x80000000
+    size: 0x10000000
+    permissions: rw-
+  bank4:
+    base_addr: 0x90000000
+    size: 0x10000000
+    permissions: rw-
+  sdram_bank1:
+    base_addr: 0xc0000000
+    size: 0x10000000
+    permissions: rw-
+  sdram_bank2:
+    base_addr: 0xd0000000
+    size: 0x10000000
+    permissions: rw-
+

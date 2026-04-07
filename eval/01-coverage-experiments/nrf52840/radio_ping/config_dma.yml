@@ -1,0 +1,17 @@
+include:
+  - config.yml
+
+peripherals:
+  nordic_radio:
+    packet_limit: 30
+    class: fuzzware_harness.peripherals.nordic.nrf52840_radio.RADIO
+    base_addr: 0x40001000
+    size: 0xffc
+    irqs:
+      # RADIO_IRQHandler
+      - 0x11
+  nrf_ppi:
+    class: fuzzware_harness.peripherals.nordic.nrf52_ppi.PPI
+    base_addr: 0x4001F000
+    size: 0x990
+

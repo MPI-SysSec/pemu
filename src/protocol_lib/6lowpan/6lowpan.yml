@@ -1,0 +1,452 @@
+#https://datatracker.ietf.org/doc/html/rfc4944#section-2 @section 5
+meta:
+  id: 0x20005
+  endian: be
+
+header:
+  # pseudo field, repsonsible to decide which extension headers to use 
+  ext_hdr_condition:
+    type: condition
+    size: 0
+    cond_handler: ip6_ext_hdr_roll
+    doc: Handler without any size that decides which extension headers are used
+
+  # pseudo field, repsonsible to decide which extension headers to use 
+  pointer_correction:
+    type: handler
+    size: 0
+    handler: ip6_ext_ptr
+    doc: TODO
+
+  # pseudo field, repsonsible to recalc the length of the ip6 header to include extension headers
+  len_correction:
+    type: handler
+    size: 0
+    handler: ip6_total_len_handler
+    doc: TODO
+
+  compression_header:
+    type: nested
+    action: compression
+    nested: sixlowpan_compression_wrapper
+    target: ip6_header
+    size: 2
+    meta:
+      id: 0x10050
+      endian: be
+    header:
+      pattern: 
+        type: fuzzed 
+        size: 1
+        doc: dispatch value for the compression header
+
+      encoding:
+        type: fuzzed
+        size: 1
+        doc: bitmask which fields are compressed plus information on the subsequent header
+
+      cid:
+        type: fuzzed
+        size: 0
+        doc: optional context identifier header. Is used depending on a bit in the encoding
+      
+    doc: if compression is used assemble the header and compress the body
+  
+
+  ip6_header:
+    type: nested
+    meta:
+      id: 0x286dd
+      endian: be 
+      
+    header:
+      version:
+        type: data
+        value: 6
+        size: b4
+        doc: constant version
+      
+      traffic_class_ds:
+        type: fuzzed
+        size: b6
+        doc: differentiated services field; always ends on 0
+      
+      traffic_class_ecn:
+        type: fuzzed
+        size: b2
+        doc: explicit congestion notification
+
+      compression_padding:
+        type: fuzzed
+        size: 0
+        doc: paddin that can be resized in the case of compression
+
+      flow_label:
+        type: fuzzed
+        size: b20
+        doc: label that associates packet with group of packets
+
+      payload_len:
+        type: length
+        size: b16
+        format: b
+        scope: header
+        doc: The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop extension header carries a Jumbo Payload option.
+
+      next_header:
+        type: pointer
+        point_to_nested: True
+        size: 1
+        doc: specifies the type of the next header; values are the same as with ip4
+
+      hop_limit:
+        type: fuzzed
+        size: 1
+        doc: equal to ttl in ip4
+
+      source_addr:
+        type: reference
+        size: 16
+        reference: TCPIP.IP6_source
+        doc: ip6 addr of the sending node
+      
+      destination_addr:
+        type: reference
+        size: 16
+        reference: TCPIP.IP6_dest
+        doc: ip6 addr of the receiving node
+
+  ext_header_hop_nhc:
+    type: nested
+    action: compression
+    nested: nhc_compression_handler
+    target: ext_header_hop
+    size: 1
+    meta:
+      id: 0
+      endian: be
+    header:
+      pattern: 
+        type: data 
+        size: b4
+        value: 0b1110
+        doc: patter of the nhc header
+
+      eid:
+        type: fuzzed 
+        size: b3
+        doc: eid value identifying the extension header
+
+      nh:
+        type: fuzzed 
+        size: b1
+        doc: patter of the next nhc header
+
+  ext_header_hop:
+    type: nested
+    meta:
+      id: 0
+      endian: be
+    header:
+      next_header:
+        type: pointer
+        size: 1
+        doc: identifies the header
+
+      header_ext_length:
+        type: data
+        value: 0
+        size: 1
+        doc: length of ext header in 8 octets, not including the first 8 octets
+
+      options_and_padding:
+        type: fuzzed
+        size: 6 
+        ephemeral: true
+        doc: options and padding, may be up to 14 bytes
+
+      compression_padding:
+        type: data
+        value: 0
+        size: 0
+        doc: optional padding, that can be resized
+
+    doc: Hop by hop extension header
+
+  ext_header_routing_nhc:
+    type: nested
+    action: compression
+    nested: nhc_compression_handler
+    target: ext_header_routing
+    size: 1
+    meta:
+      id: 43
+      endian: be
+    header:
+      pattern: 
+        type: data 
+        size: b4
+        value: 0b1110
+        doc: patter of the nhc header
+
+      eid:
+        type: fuzzed 
+        size: b3
+        doc: eid value identifying the extension header
+
+      nh:
+        type: fuzzed 
+        size: b1
+        doc: patter of the next nhc header
+
+
+  ext_header_routing:
+    type: nested
+    meta:
+      id: 43
+      endian: be
+    header:
+      next_header:
+        type: pointer
+        size: 1
+        doc: identifies the header
+
+      # TODO
+      header_ext_length:
+        # type: length
+        # scope: header
+        # format: b
+        type: data
+        value: 0
+        size: 1
+        ephemeral: True
+        doc: length of ext header in 8 octets, not including the first 8 octets
+
+      routing_type:
+        type: fuzzed
+        size: 1
+        ephemeral: True
+        doc: IANA assigned value
+
+      segments_left:
+        type: data
+        value: 0
+        size: 1
+        doc: Number of nodes left before reaching final desination
+
+      specific_data:
+        type: fuzzed
+        size: 4
+        ephemeral: True
+        doc: data that belongs to the type of routing header. may be up to 12 bytes 
+
+      compression_padding:
+        type: data
+        value: 0
+        size: 0
+        doc: optional padding, that can be resized
+    
+  ext_header_frag_nhc:
+    type: nested
+    action: compression
+    nested: nhc_compression_handler
+    target: ext_header_frag
+    size: 1
+    meta:
+      id: 44
+      endian: be
+    header:
+      pattern: 
+        type: data 
+        size: b4
+        value: 0b1110
+        doc: patter of the nhc header
+
+      eid:
+        type: fuzzed 
+        size: b3
+        doc: eid value identifying the extension header
+
+      nh:
+        type: fuzzed 
+        size: b1
+        doc: patter of the next nhc header
+
+  ext_header_frag:
+    type: nested
+    meta: 
+      id: 44
+      endian: be
+    header:
+      next_header:
+        type: pointer
+        size: 1
+        doc: identifies the header
+      
+      reserved:
+        type: data
+        value: 0
+        size: 1
+      
+      fragment_offset:
+        type: fuzzed
+        size: b13
+        ephemeral: true
+        doc: offset in 8-octets
+
+      reserved_2:
+        type: data
+        value: 0
+        size: b2
+        doc: reserved as well
+
+      m_flag:
+        type: fuzzed
+        size: b1
+        ephemeral: true
+        doc: 1 means more fragments will follow, 0 means last fragment
+
+      identification:
+        type: fuzzed
+        size: 4
+        doc: id generated by the source node
+
+      compression_padding:
+        type: data
+        value: 0
+        size: 0
+        doc: optional padding, that can be resized
+
+      
+  ext_header_dest_options_nhc:
+    type: nested
+    action: compression
+    nested: nhc_compression_handler
+    target: ext_header_dest_options
+    size: 1
+    meta:
+      id: 60
+      endian: be
+    header:
+      pattern: 
+        type: data 
+        size: b4
+        value: 0b1110
+        doc: patter of the nhc header
+
+      eid:
+        type: fuzzed 
+        size: b3
+        doc: eid value identifying the extension header
+
+      nh:
+        type: fuzzed 
+        size: b1
+        doc: patter of the next nhc header
+
+  ext_header_dest_options:
+    type: nested
+    meta: 
+      id: 60
+      endian: be
+    header:
+      next_header:
+        type: pointer
+        size: 1
+        doc: identifies the header
+
+      header_ext_length:
+        type: data
+        value: 0
+        size: 1
+        ephemeral: true
+        doc: length of ext header in 8 octets, not including the first 8 octets
+
+      options:
+        type: fuzzed
+        size: 6 
+        ephemeral: true
+        doc: options and padding, may be up to 14 bytes
+      
+      compression_padding:
+        type: data
+        value: 0
+        size: 0
+        doc: optional padding, that can be resized
+
+    doc: Destination options. Same structure as the hop by hop header
+
+  ext_header_mobility_nhc:
+    type: nested
+    action: compression
+    nested: nhc_compression_handler
+    target: ext_header_mobility
+    size: 1
+    meta:
+      id: 135
+      endian: be
+    header:
+      pattern: 
+        type: data 
+        size: b4
+        value: 0b1110
+        doc: patter of the nhc header
+
+      eid:
+        type: fuzzed 
+        size: b3
+        doc: eid value identifying the extension header
+
+      nh:
+        type: fuzzed 
+        size: b1
+        doc: patter of the next nhc header   
+
+  ext_header_mobility:
+    type: nested
+    meta: 
+      id: 135
+      endian: be
+    header:
+      next_header:
+        type: pointer
+        size: 1
+        doc: identifies the header
+      
+      header_ext_length:
+        type: data
+        value: 0
+        size: 1
+        ephemeral: true
+        doc: length of ext header in 8 octets, not including the first 8 octets
+
+      mh_type:
+       type: fuzzed
+       size: 1
+       ephemeral: True
+       doc: identifies the particular mobility message
+
+      reserved:
+        type: data
+        size: 1
+        value: 0
+
+      checksum:
+        type: fuzzed
+        size: 2
+        ephemeral: true
+
+      message_data:
+        type: fuzzed
+        size: 6
+        ephemeral: true
+        doc: message specific data
+
+      compression_padding:
+        type: data
+        value: 0
+        size: 0
+        doc: optional padding, that can be resized
+
+body:
+  size: fuzzed

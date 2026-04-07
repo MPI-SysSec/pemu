@@ -1,0 +1,597 @@
+diff --git a/fuzzware_pipeline/__init__.py b/fuzzware_pipeline/__init__.py
+index b320fe9..fea21e5 100644
+--- a/fuzzware_pipeline/__init__.py
++++ b/fuzzware_pipeline/__init__.py
+@@ -302,7 +302,7 @@ def do_pipeline(args, leftover_args):
+     timeout_seconds = sum(x * int(t) for x, t in zip([1, 60, 3600, 24*3600], reversed(args.run_for.split(":"))))
+ 
+     status = 0
+-    pipeline = Pipeline(args.config, args.out, args.base_inputs, args.num_local_fuzzer_instances, args.disable_modeling, write_worker_logs=not args.silent_workers, do_full_tracing=args.full_traces, timeout_seconds=timeout_seconds, use_aflpp=args.aflpp, milestone_limit=args.milestone_limit, detect_dma=args.dma, detect_dma_in_python=args.dma_in_python, summarize_dma_snippets_in_python=args.dma_snippet_summary_in_python, dma_snippet_format=args.dma_snippet_format)
++    pipeline = Pipeline(args.config, args.out, args.base_inputs, args.num_local_fuzzer_instances, args.disable_modeling, write_worker_logs=not args.silent_workers, do_full_tracing=args.full_traces, timeout_seconds=timeout_seconds, use_aflpp=args.aflpp, milestone_limit=args.milestone_limit, detect_dma=args.dma, detect_dma_in_python=args.dma_in_python, summarize_dma_snippets_in_python=args.dma_snippet_summary_in_python, dma_snippet_format=args.dma_snippet_format, aggressive_min=args.aggressive_minimization)
+ 
+     try:
+         if timeout_seconds != 0:
+@@ -707,7 +707,6 @@ def do_cov(args, leftover_args):
+                 print("\n====== Found Symbols ======")
+                 for bb in sorted(symbol_bbs & covered_bbs):
+                     print(f"{bb:#010x} ({addr_to_sym.get(bb)})")
+-
+                 print("\n====== Not Found Symbols ======")
+                 for bb in sorted(symbol_bbs - covered_bbs):
+                     print(f"{bb:#010x} ({addr_to_sym.get(bb)})")
+@@ -1085,6 +1084,8 @@ def main():
+     pipeline_group_config_arguments.add_argument('--runtime-config-name', default=nc.SESS_FILENAME_CONFIG, help=f"[DEPRECATED] Incompatible with -c. Name of config yaml file, relative to target_dir. Defaults to '{nc.SESS_FILENAME_CONFIG}'.")
+     pipeline_group_output_arguments.add_argument('-p', '--project-name', default=nc.DEFAULT_PROJECT_NAME, help=f"[DEPRECATED] Incompatible with -o. Name of the fuzzing project directory where all the information (input corpus, traces, modeling, ...) regarding the run is stored. Defaults to '{nc.DEFAULT_PROJECT_NAME}'")
+     parser_pipeline.add_argument('target_dir', nargs="?", default=None, help="Implied by -c. Directory containing the main config. Defaults to the current working dir.")
++    parser_pipeline.add_argument('--aggressive-minimization', default=False, action='store_true', help="When fuzzing with a DMA-enabled peripheral this option will aggressively minimize DMA traces")
++
+ 
+     # Bare-bone Fuzzer command-line arguments
+     parser_fuzz.add_argument('out_subdir', help="The output subdirectory name to use.")
+diff --git a/fuzzware_pipeline/const.py b/fuzzware_pipeline/const.py
+index 3a85900..fdb5d24 100644
+--- a/fuzzware_pipeline/const.py
++++ b/fuzzware_pipeline/const.py
+@@ -26,6 +26,15 @@ IDLE_COUNT_HOUSEKEEPING = 5 # 5 seconds (TODO: 0.1 * 5 = 0.5 seconds?)
+ IDLE_COUNT_DMA_DETECTION = 10 * 60 # 1 minute
+ LOOP_COUNT_HOUSEKEEPING = 200   # 20 seconds
+ 
++# After finding new network information give fuzzer some time and then restart it
++NP_INITIAL_WAIT = 3 * 60* 60
++CONFIG_UPDATE_MIN_TIME_SINCE_NEW_NETWORK_UPDATE = 30 * 60
++FAULT_INJECTION_TIME_THRESHOLD = 2 * 60 * 60
++FAULT_INCREASE_TIME_THRESHOLD = 2 * 60 * 60
++FAULT_INCREASE = 5 # percent
++DEFAULT_FAULT_PROB = 30 # percent
++
++
+ FIRST_STAT_PRINT_DELAY = 180
+ STAT_PRINT_INTERVAL = 30
+ 
+diff --git a/fuzzware_pipeline/naming_conventions.py b/fuzzware_pipeline/naming_conventions.py
+index 626d27e..a1fe1c1 100644
+--- a/fuzzware_pipeline/naming_conventions.py
++++ b/fuzzware_pipeline/naming_conventions.py
+@@ -108,6 +108,13 @@ CONFIG_ENTRY_NAME_BOOT_TARGET = 'target'
+ INPUT_FILENAME_PREFIX = "id"
+ BINARY_FILENAME_EXT = "bin"
+ 
++# dma config naming conventions
++BASEDIR_FILENAME_CONFIG_REFERENCE = "config_dma_reference.yml"
++BASEDIR_FILENAME_CONFIG_MANUAL = "config_dma_manual.yml"
++BASEDIR_FILENAME_CONFIG_CUSTOM = "config_custom.yml"
++BASEDIR_FILENAME_CONFIG_AUTO = "config_autogen.yml"
++
++
+ def default_base_input_dir():
+     return os.path.abspath(os.path.dirname(os.path.realpath(__file__))+"/../data/base_inputs")
+ 
+@@ -189,6 +196,7 @@ def trace_paths_for_input(input_path):
+         trace_for_input_path(input_path, PREFIX_BASIC_BLOCK_SET),
+         trace_for_input_path(input_path, PREFIX_MMIO_SET),
+         trace_for_input_path(input_path, PREFIX_INTERRUPT_TRACE),
++        #trace_for_input_path(input_path, PREFIX_BASIC_BLOCK_HASH), # Pemu introduced
+         trace_for_input_path(input_path, PREFIX_DMA_TRACE),
+     )
+ 
+diff --git a/fuzzware_pipeline/pipeline.py b/fuzzware_pipeline/pipeline.py
+index 399ba85..b04f379 100644
+--- a/fuzzware_pipeline/pipeline.py
++++ b/fuzzware_pipeline/pipeline.py
+@@ -15,6 +15,7 @@ from fuzzware_harness.tracing.serialization import (parse_bbl_set,
+ from fuzzware_harness.util import (_merge_dict, load_config_deep,
+                                    parse_address_value, parse_symbols,
+                                    resolve_region_file_paths, closest_symbol)
++from fuzzware_harness.network.analysis.probe_based_detection import fuzzware_probe_analysis
+ from watchdog.observers import Observer
+ 
+ from . import util
+@@ -24,10 +25,14 @@ from .const import (CONFIG_UPDATE_FORCE_FUZZER_RESTART_LIMIT,
+                     IDLE_COUNT_HOUSEKEEPING, LOOP_COUNT_HOUSEKEEPING,
+                     MAX_NUM_DEAD_FUZZER_RESTARTS, MAX_NUM_MODELS_PER_PC,
+                     FIRST_STAT_PRINT_DELAY, STAT_PRINT_INTERVAL,
++                    CONFIG_UPDATE_MIN_TIME_SINCE_NEW_NETWORK_UPDATE,
++                    FAULT_INJECTION_TIME_THRESHOLD, FAULT_INCREASE_TIME_THRESHOLD,
++                    FAULT_INCREASE, DEFAULT_FAULT_PROB, NP_INITIAL_WAIT,
+                     IDLE_COUNT_DMA_DETECTION, DMA_ANALYSIS_RERUN_TIMEOUT)
+ from .logging_handler import logging_handler
+ from .naming_conventions import *  # pylint: disable=wildcard-import
+ from . import naming_conventions as nc
++
+ from .observers.new_config_snippet_handler import NewConfigSnippetHandler
+ from .observers.new_mmio_state_handler import NewMmioStateHandler
+ from .run_target import run_target
+@@ -44,6 +49,8 @@ logger = logging_handler().get_logger("pipeline")
+ 
+ class Pipeline:
+     # Base configs
++    parent_dir: str
++    name: str
+     base_inputs: str
+     num_main_fuzzer_procs: int
+     booted_bbl: int
+@@ -184,7 +191,10 @@ class Pipeline:
+             return
+ 
+         self.seen_rel_input_paths.add(relpath)
+-        last_mod_time = os.stat(input_path).st_ctime
++        if os.path.exists(input_path):
++            last_mod_time = os.stat(input_path).st_ctime
++        else:
++            last_mod_time = self.start_time
+         seconds_from_start = max(round(last_mod_time - self.start_time), 0)
+ 
+         add_input_file_time_entry(self.input_creation_times_file, seconds_from_start, str(relpath))
+@@ -241,7 +251,7 @@ class Pipeline:
+         if os.path.exists(milestone_bb_list_path):
+             self.groundtruth_milestone_basic_blocks = parse_milestone_bb_file(milestone_bb_list_path, self.symbols)
+ 
+-    def __init__(self, config_path, project_dir, base_inputs, num_main_fuzzer_procs, disable_modeling=False, write_worker_logs=False, do_full_tracing=False, timeout_seconds=0, use_aflpp=False, milestone_limit=None, detect_dma=False, detect_dma_in_python=False, summarize_dma_snippets_in_python=False, dma_snippet_format="yaml"):
++    def __init__(self, config_path, project_dir, base_inputs, num_main_fuzzer_procs, disable_modeling=False, write_worker_logs=False, do_full_tracing=False, timeout_seconds=0, use_aflpp=False, milestone_limit=None, detect_dma=False, detect_dma_in_python=False, summarize_dma_snippets_in_python=False, dma_snippet_format="yaml", aggressive_min=False):
+         self.booted_bbl = DEFAULT_IDLE_BBL
+         self.disable_modeling = disable_modeling
+         self.shutdown_requested = False
+@@ -254,6 +264,15 @@ class Pipeline:
+         self.dma_detection_use_python_summary = summarize_dma_snippets_in_python
+         self.dma_snippet_format = dma_snippet_format
+         self.do_full_tracing = do_full_tracing
++        # these are pemu specific patches
++        #self.parent_dir = parent_dir
++        #self.name = name
++        #self.num_main_fuzzer_procs = num_main_fuzzer_procs
++        #self.generic_inputs_dir = base_inputs
++        #self.do_full_tracing = do_full_tracing
++        #self.num_required_traces = len(SET_TRACE_FILENAME_PREFIXES) if not do_full_tracing else len(TRACE_FILENAME_PREFIXES) - 1
++        #self.base_config_path = os.path.join(self.parent_dir, config_name)
++
+         self.groundtruth_valid_basic_blocks = None
+         self.groundtruth_milestone_basic_blocks = None
+         self.stop_time = None
+@@ -263,6 +282,12 @@ class Pipeline:
+ 
+         assert Path(self.base_config_path).is_file(), "Configuration file is expected to be an existing file"
+         assert Path(self.base_dir).parent.is_dir(), "Parent of project directory is expected to be an existing directory"
++        self._last_detection_timer = None
++        self._fault_increase_timer = None
++        self._inject_faults = False
++        self._fault_increase_val = 0
++        self._aggressive_min = aggressive_min
++        self._found_dma = False
+ 
+         self.queue_fuzz_inputs = Queue()
+         self.queue_traces = Queue()
+@@ -470,6 +495,8 @@ class Pipeline:
+         new_mmio_and_boot = []
+         # At least they boot or discover new MMIO vars
+         new_mmio_or_boot = []
++        # dma
++        dma = []
+         # All unique inputs
+         unique = []
+ 
+@@ -498,7 +525,7 @@ class Pipeline:
+                     else:
+                         continue
+ 
+-                    _, _, _, bbl_set_path, mmio_set_path, _, _ = trace_paths_for_input(input_path)
++                    _, _, _, bbl_set_path, mmio_set_path, _, dma_trace_path = trace_paths_for_input(input_path)
+                     if not os.path.isfile(bbl_set_path):
+                         if self.num_main_fuzzer_procs == 1:
+                             self.add_warning_line("[add_main_session] Could not find trace files for input path '{}'".format(input_path))
+@@ -512,10 +539,21 @@ class Pipeline:
+                     elif triggers_boot:
+                         # No new MMIO, but boot
+                         new_mmio_or_boot.append(input_path)
++
++                    if os.path.exists(dma_trace_path):
++                        dma.append(input_path)
++
+                     unique.append(input_path)
+ 
+         generic = list(glob.glob(self.generic_inputs_dir+"/*"))
+-        input_candidate_lists = [new_mmio_and_boot, new_mmio_or_boot, unique, generic]
++        if time.time() -self.start_time > NP_INITIAL_WAIT and self._aggressive_min and dma:
++            input_candidate_lists = [dma]
++            #logger.debug(input_candidate_lists)
++            self._found_dma = True
++            logger.debug("trying aggressive min")
++        else:
++            self._found_dma = False
++            input_candidate_lists = [new_mmio_and_boot, new_mmio_or_boot, unique, generic, dma]
+ 
+         # Also add default inputs as last entry in case it is not already part of the list
+         if os.path.abspath(self.generic_inputs_dir) != default_base_input_dir():
+@@ -553,6 +591,60 @@ class Pipeline:
+         # Main config snippets are merged in by recursive merging
+         _merge_dict(config_map, load_config_deep(self.main_config_snippets_path))
+ 
++        # NPFUZZ Patch:
++        if 'peripherals' in config_map:
++            do_np = len([y['network'] for x,y in config_map['peripherals'].items() if 'network' in y]) > 1
++        else: 
++            do_np = False
++        if do_np and time.time() - self.start_time > NP_INITIAL_WAIT:
++            # Analysis and fault detection logic
++            analysis_res = 0
++            # 1. Handle the first time we start injecting faults; in that case we do not perform any analysis
++            if self._last_detection_timer and time.time() - self._last_detection_timer > FAULT_INJECTION_TIME_THRESHOLD:
++                self._inject_faults = True
++                self._last_detection_timer = None
++                # Make sure to copy apriori values to the new configuration
++                default_network = [y['network'] for x,y in config_map['peripherals'].items() if 'network' in y][0]
++                cur_network = [y['network'] for x,y in load_config_deep(self.sessions[self.curr_main_sess_key].config_path)['peripherals'].items() if 'network' in y][0]
++                if 'apriori' in cur_network:
++                    default_network['apriori'] = cur_network['apriori']
++                if 'protocols' in cur_network:
++                    default_network['protocols'] = cur_network['protocols']
++            # 2. Look for protocol updates:
++            elif self.curr_main_sess_index != 0:
++                analysis_res = fuzzware_probe_analysis(self.sessions[self.curr_main_sess_key].base_dir, config_map, self.sessions[self.curr_main_sess_key].config_path, queue_in=None, parsed_logger=logger)
++                #analysis_res = fuzzware_probe_analysis(self.sessions[self.curr_main_sess_key].base_dir, load_config_deep(self.sessions[self.curr_main_sess_key].config_path), self.sessions[self.curr_main_sess_key].config_path, queue_in=None, parsed_logger=logger)
++                if analysis_res and not self._inject_faults:
++                    # start a fault injection timer; when this timer runs out we restart the fuzzer and start injecting faults 
++                    self._last_detection_timer = time.time()          
++
++            # 3. Actually inject faults. Executed every time once started, to keep the config updated
++            if self._inject_faults:
++                if self._fault_increase_timer and time.time() - self._fault_increase_timer > FAULT_INCREASE_TIME_THRESHOLD:
++                    self._fault_increase_val += FAULT_INCREASE
++
++                if analysis_res:
++                    # upon successfull analysis we want to decrease the fault probability a little bit.
++                    #self._fault_increase_val -= 2 * FAULT_INCREASE 
++                    if DEFAULT_FAULT_PROB + self._fault_increase_val < 0:
++                        self._fault_increase_val = -1 * DEFAULT_FAULT_PROB
++                network = [y['network'] for x,y in config_map['peripherals'].items() if 'network' in y][0]
++                target = 'all'
++                probability = DEFAULT_FAULT_PROB
++                if 'faults' in network:
++                    if 'target' in network['faults']:
++                        target = network['faults']['target']
++                    if 'probability' in network['faults']:
++                        probability = network['faults']['probability']
++                    
++                if DEFAULT_FAULT_PROB + self._fault_increase_val >= 100:
++                    self._fault_increase_val = 0
++            
++                network['faults'] = {'target': target, 'probability': probability + self._fault_increase_val}
++                self._fault_increase_timer = time.time() #restart every time 
++
++            
++            
+         # Before adding the new session, get the possibly previously used prefix path
+         is_previously_used_prefix = False
+         if self.curr_main_sess_index and self.curr_main_session.prefix_input_path:
+@@ -571,10 +663,19 @@ class Pipeline:
+ 
+             new_sess_inputs_dir = self.curr_main_session.base_input_dir
+             os.mkdir(new_sess_inputs_dir)
++            #logger.log(input_path_list)
+             for path in input_path_list:
++                #print(path)
+                 shutil.copy2(path, new_sess_inputs_dir)
+ 
+-            self.curr_main_session.minimize_inputs(prefix_candidate_path=prefix_input_candidate, is_previously_used_prefix=is_previously_used_prefix)
++            if time.time() - self.start_time > NP_INITIAL_WAIT and self._aggressive_min and self._found_dma:
++                # sanity check: if we choose aggressive minimization, but have not yet covered dma related contents, we just default to reular minimization
++                logger.debug("Doing aggressive min")
++                self.curr_main_session.np_fuzz_aggressive_minimizer(prefix_candidate_path=prefix_input_candidate, is_previously_used_prefix=is_previously_used_prefix, input_path_list=input_path_list)
++                self._found_dma = False
++            else:
++                logger.debug(f"No aggressive min :-() {self._aggressive_min};{self._found_dma}")
++                self.curr_main_session.minimize_inputs(prefix_candidate_path=prefix_input_candidate, is_previously_used_prefix=is_previously_used_prefix)
+             # Try the inputs
+             if self.curr_main_session.start_fuzzers():
+                 start_success = True
+@@ -590,14 +691,23 @@ class Pipeline:
+         num_config_updates = 0 # Types of config updates, new/modified: 1. MMIO models, 2. exit-at, 3. state, 4. systick enabled
+         restart_pending = False
+         dma_modeling_running = False
+-        pending_prefix_candidate = None
+-        time_latest_new_basic_block = None
+         time_last_dma_eval_start = None
+         is_first_dma_cfg = False
+-
++        pending_prefix_candidate = None
++        time_latest_new_basic_block = None
++        time_latest_network_update = None
++        waiting_for_np = True
++        if 'peripherals' not in self.default_config_map or len([y['network'] for x, y in self.default_config_map['peripherals'].items() if 'network' in y]) == 0:
++            waiting_for_np = False
++        print(f"waiting_for_np is {waiting_for_np}")
++        
++
++        # {input_path: {PREFIX_NAME: trace_path}}
++        available_trace_paths_for_input = {}
+         unprocessed_inputs = set()
+         current_time = time.time()
+         while True:
++            new_network_information = False
+             if self.shutdown_requested and not restart_pending:
+                 num_config_updates += 1
+                 self.curr_main_session.kill_fuzzers()
+@@ -629,6 +739,7 @@ class Pipeline:
+                     idle_count = 0
+                     self.known_input_hashes[session_name].add(new_hash)
+                     unprocessed_inputs.add(fuzz_input_path)
++                    available_trace_paths_for_input[fuzz_input_path] = {}
+                     self.worker_pool.enqueue_job_trace_gen(fuzz_input_path)
+ 
+                 if had_to_wait:
+@@ -642,6 +753,7 @@ class Pipeline:
+                 logger.debug(f"Got MMIO state: {mmio_state_filename}")
+                 if not self.disable_modeling:
+                     self.worker_pool.enqueue_job_analyze_model(mmio_state_filename, mmio_state_path)
++                    num_config_updates += 1
+             except queue.Empty:
+                 pass
+ 
+@@ -686,9 +798,23 @@ class Pipeline:
+             try:
+                 event_time, trace_file_path = self.queue_traces.get_nowait()
+                 input_file_path = input_for_trace_path(trace_file_path)
++                prefix = trace_prefix_for_path(trace_file_path)
+ 
+                 # Trace files can show up after input has already been removed. Skip those cases
+                 if input_file_path in unprocessed_inputs:
++                    if prefix == PREFIX_DMA_TRACE:
++                        if not waiting_for_np:
++                            # here we can quickly process the dma file to find out wether we need to trigger new analysis
++                            logger.debug(f"got dma prefix for the following trace {trace_file_path}")
++                            self._found_dma = True
++                            dma_trace = load_config_deep(trace_file_path)
++                            if 'new_protocols' in dma_trace or 'new_val' in dma_trace:
++                                logger.debug(f"got new network information; Triggering restart soon")
++                                # found a reason to trigger a restart
++                                new_network_information = True
++                    # Maybe everything below needs to be surrounded by else:
++                    # TODO
++
+                     logger.debug(f"Looking at trace file {os.path.basename(trace_file_path)}")
+                     required_traces = _, _, _, bbl_set_path, mmio_set_path, _, _ = trace_paths_for_trace(trace_file_path)
+                     if not self.do_full_tracing:
+@@ -818,14 +944,39 @@ class Pipeline:
+                         time_last_dma_eval_start = None
+ 
+             # Do we have config updates?
+-            if (not restart_pending) and num_config_updates != 0 and (
++            if (not restart_pending) and (num_config_updates != 0 and (
+                 # We have a huge number of config updates
+                 num_config_updates >= CONFIG_UPDATE_FORCE_FUZZER_RESTART_LIMIT or (
+                 # Or we have a smaller number of updates, but waited for new things to happen long enough
+                 time_latest_new_basic_block is None or
+                     (time.time() - time_latest_new_basic_block > CONFIG_UPDATE_MIN_TIME_SINCE_NEW_BB_DISCOVERY)
+-                )):
++                # Or we have some new network information, or have waited some time since the las new information
++                )) or (new_network_information) or ( time_latest_network_update and
++                    time.time() - time_latest_network_update > CONFIG_UPDATE_MIN_TIME_SINCE_NEW_NETWORK_UPDATE) or (
++                # Or no updates for some time and we want to enable fault injection
++                self._last_detection_timer and time.time() - self._last_detection_timer > FAULT_INJECTION_TIME_THRESHOLD
++                # Or time has passed since the last configuration update, so we now want to increase the fault probabilty
++                ) or (self._fault_increase_timer and time.time() -self._fault_increase_timer > FAULT_INCREASE_TIME_THRESHOLD) or (
++                    time.time() - self.start_time > NP_INITIAL_WAIT and waiting_for_np)):
++                
+                 self.curr_main_session.kill_fuzzers()
++                if waiting_for_np and time.time() - self.start_time > NP_INITIAL_WAIT:
++                    logger.debug(f"Starting to NP-FUZZ")
++                    waiting_for_np = False
++                if self._fault_increase_timer and time.time() - self._fault_increase_timer > FAULT_INCREASE_TIME_THRESHOLD:
++                    logger.debug(f"Triggered restart to add higher fault proability XD")
++                if time_latest_network_update and time.time() - time_latest_network_update > CONFIG_UPDATE_MIN_TIME_SINCE_NEW_NETWORK_UPDATE:
++                    logger.debug(f"Triggered restart because timer ran down :-)")
++                time_latest_network_update = None
++                if new_network_information:
++                    # Store time so we can restart after some timeout
++                    logger.debug(f"Triggered restart because of new network information; starting the timer")
++                    time_latest_network_update = time.time()
++                if self._last_detection_timer and time.time() - self._last_detection_timer > FAULT_INJECTION_TIME_THRESHOLD:
++                    logger.debug(f"Triggered restart and activating fault injection")
++                    self._inject_faults = True
++                    
++                new_network_information = False
+                 restart_pending = True
+                 # After killing the fuzzers, add a temporary modeling worker to go through any leftover modeling jobs
+                 self.worker_pool.spawn_modeling_worker(burst=True)
+diff --git a/fuzzware_pipeline/session.py b/fuzzware_pipeline/session.py
+index 59363f4..ad6de63 100644
+--- a/fuzzware_pipeline/session.py
++++ b/fuzzware_pipeline/session.py
+@@ -7,6 +7,7 @@ from os.path import isfile, join, exists
+ from fuzzware_harness.tracing.serialization import (parse_bbl_set,
+                                                     parse_mmio_trace)
+ from watchdog.observers import Observer
++from fuzzware_harness.util import load_config_deep
+ 
+ from .const import MAX_FUZZER_DRYRUN_SECONDS
+ from .fuzzer_instance import LocalFuzzerInstance
+@@ -24,14 +25,14 @@ from .naming_conventions import (SESS_DIRNAME_BASE_INPUTS,
+                                  SESS_FILENAME_TEMP_MMIO_TRACE,
+                                  SESS_FILENAME_TEMP_PREFIX_INPUT,
+                                  SESS_FILENAME_CUR_INPUT)
+-from . import naming_conventions as nc
++from .naming_conventions import trace_paths_for_input 
+ from .observers.new_fuzz_input_handler import NewFuzzInputHandler
+ from .observers.new_trace_file_handler import NewTraceFileHandler
+ from .observers.new_dma_cfg_candidate_handler import NewDMACandidateConfigHandler
+ from .run_fuzzer import run_corpus_minimizer
+ from .run_target import gen_run_arglist, run_target
+ from .util.config import save_config, save_extra_args
+-from .util.files import copy_prefix_to, first_file, prepend_to_all
++from .util.files import copy_prefix_to, first_file, prepend_to_all, files_in_dir
+ from .util.eval_utils import parse_afl_fuzzer_stats
+ from .workers.tracegen import gen_traces
+ 
+@@ -207,6 +208,102 @@ class Session:
+         if os.path.exists(self.temp_minimization_dir):
+             shutil.rmtree(self.temp_minimization_dir)
+ 
++    def np_fuzz_aggressive_minimizer(self, silent=False, prefix_candidate_path=None, is_previously_used_prefix=False, input_path_list=[]):
++        assert(prefix_candidate_path or not is_previously_used_prefix)
++        
++        # Handle cases where prefix candidate is passed
++        if prefix_candidate_path:
++            booting_prefix_size = self.get_booting_prefix_size(prefix_candidate_path)
++            is_booted_successfully = booting_prefix_size is not None
++            if is_previously_used_prefix:
++                if is_booted_successfully:
++                    # A previously booting prefix still boots.
++                    # Set the booting prefix and prepend remainder to input files
++                    self.save_prefix_input(prefix_candidate_path, booting_prefix_size)
++                    prepend_to_all(self.base_input_dir, prefix_candidate_path, from_offset=booting_prefix_size)
++                else:
++                    # The input no longer successfully boots the image
++                    # Attach the no longer booting prefix to input files and minimize without prefix
++                    prepend_to_all(self.base_input_dir, prefix_candidate_path)
++            else:
++                if is_booted_successfully:
++                    # A brand new booting input was discovered, use it as new input prefix and reset to generic inputs
++                    # extract prefix from input, copy over generic base inputs
++                    shutil.rmtree(self.base_input_dir)
++                    shutil.copytree(self.parent.generic_inputs_dir, self.base_input_dir)
++                    self.save_prefix_input(prefix_candidate_path, booting_prefix_size)
++                    # No minimization or input corpus adjustment required in this case, return
++                    return
++        else:
++            # We are currently not able to successfully boot, minimize normally
++            pass
++
++        # Perform minimization. In case an input prefix is used, this is already saved in self.extra_runtime_args
++        shutil.move(self.base_input_dir, self.temp_minimization_dir)
++        harness_args = self.emulator_args()
++
++        # in the temp minimization dir, we can do the agressive minimization
++        # First detect inputs that can be associated with dma traces.
++        # remove/zero out all bytes after the first dma access?
++        # remove all the remaining traces
++        logger.debug("Starting aggressive minimization")
++        for input_path in input_path_list:
++            logger.debug("=====")
++            input_path_in_base_inputs = join(self.temp_minimization_dir, input_path.split('/')[-1])
++            logger.debug(f"checking path: {input_path_in_base_inputs}")
++            if not exists(input_path_in_base_inputs):
++                logger.debug("Skipping; because it does not exist")
++                continue #skipping
++
++            _, _, _, _, _, _, dma_trace_path = trace_paths_for_input(input_path)
++            dma_trace = load_config_deep(dma_trace_path)
++            logger.debug(f"found the belonging dma trace: {dma_trace_path}")
++            if not 'packets' in dma_trace:
++                logger.debug(f"No transferred packets in the dma trace")
++                os.remove(input_path_in_base_inputs) # We remove the input
++                continue
++
++            rx_pkts = [x for x in dma_trace['packets'] if 'mode' in x and x['mode'] == 'rx']
++            logger.debug(f"Found {len(rx_pkts)} rx pkts in the trace")
++            if not rx_pkts:
++                # Only tx packets -> we keep the input
++                 continue
++            
++            first_pkt = rx_pkts[0]
++            last_pkt = rx_pkts[-1]
++
++            with open(input_path_in_base_inputs, 'rb') as f:
++                modified_input = f.read()
++            logger.debug("Read the input file; ready to modify")
++            if len(modified_input) < first_pkt['start_cursor']:
++                logger.debug("Input to short; error")
++                os.remove(input_path_in_base_inputs) # We remove the input; seems faulty
++                continue 
++
++            #modified_input = modified_input[:first_pkt['start_cursor']] + b'\x00' * first_pkt['packet_size']
++            modified_input = modified_input[:first_pkt['start_cursor']] + b'\x00' * (last_pkt['next_cursor'] - first_pkt['start_cursor'])
++            logger.debug("Modified the input; writing it back")
++            # Write back the modified input
++            with open(input_path_in_base_inputs, "wb") as f:
++                f.write(modified_input)
++
++        logger.debug("Done with dma specific stuff; parsing it to the corpus minimizer")
++        try:
++            run_corpus_minimizer(harness_args, self.temp_minimization_dir, self.base_input_dir, silent=silent, use_aflpp=self.parent.use_aflpp)
++            if not os.listdir(self.base_input_dir):
++                self.parent.add_warning_line("Minimization for fuzzing session '{}' had no inputs remaining, copying generic inputs.".format(self.name))
++                shutil.rmtree(self.base_input_dir, True)
++                shutil.copytree(self.parent.generic_inputs_dir, self.base_input_dir)
++        except subprocess.CalledProcessError:
++            self.parent.add_warning_line("Minimization for fuzzing session '{}' failed, copying full inputs.".format(self.name))
++
++            # In case minimization does not work out, copy all inputs
++            shutil.rmtree(self.base_input_dir, True)
++            shutil.copytree(self.temp_minimization_dir, self.base_input_dir)
++
++
++
++
+     def minimize_inputs(self, silent=False, prefix_candidate_path=None, is_previously_used_prefix=False):
+         assert(prefix_candidate_path or not is_previously_used_prefix)
+ 
+@@ -279,6 +376,7 @@ class Session:
+         # Now wait for all the fuzzer instances to have come up
+         num_tries = 0
+         while any([not os.path.exists(path) for path in stats_paths]):
++        #while any([not os.path.exists(path) for path in queue_paths]):
+             num_tries += 1
+             if num_tries >= 10:
+                 break
+diff --git a/fuzzware_pipeline/util/genconfig.py b/fuzzware_pipeline/util/genconfig.py
+index cdc7b85..ac3c508 100644
+--- a/fuzzware_pipeline/util/genconfig.py
++++ b/fuzzware_pipeline/util/genconfig.py
+@@ -59,7 +59,6 @@ def extract_elf(in_path, out_path):
+                     lowest_section = 0
+                     if segment['p_offset'] == 0:
+                         lowest_section = min([x['sh_offset'] for x in list(elffile.iter_sections()) if x['sh_size'] > 0])
+-
+                     logger.info(
+                         f"Adding {segment.header['p_memsz'] - lowest_section} bytes at offset 0x{segment.header['p_paddr'] - segment_offset:08x}")
+                     out_file.seek(segment.header['p_paddr'] - segment_offset)
+diff --git a/fuzzware_pipeline/workers/pool.py b/fuzzware_pipeline/workers/pool.py
+index 13ebda2..4355718 100644
+--- a/fuzzware_pipeline/workers/pool.py
++++ b/fuzzware_pipeline/workers/pool.py
+@@ -243,7 +243,9 @@ class WorkerPool:
+         _, session_name, _, _, _ = get_input_path_components(input_path)
+         bbl_trace_path, ram_trace_path, mmio_trace_path, bbl_set_path, mmio_set_path, interrupt_trace_path, dma_trace_path = trace_paths_for_input(input_path)
+         if not self.parent.do_full_tracing:
+-            bbl_trace_path, ram_trace_path, mmio_trace_path, interrupt_trace_path, dma_trace_path = None, None, None, None, None
++            #bbl_trace_path, ram_trace_path, mmio_trace_path, interrupt_trace_path, dma_trace_path = None, None, None, None, None
++            # Pemu temporary patch
++            bbl_trace_path, ram_trace_path, mmio_trace_path, interrupt_trace_path = None, None, None, None
+ 
+         config_path = os.path.join(self.parent.base_dir, session_name, SESS_FILENAME_CONFIG)
+         self.jobs.append(self.job_queue_trace_gen.enqueue(tracegen.gen_traces, config_path, input_path,
+diff --git a/fuzzware_pipeline/workers/tracegen.py b/fuzzware_pipeline/workers/tracegen.py
+index 42c27fb..8a272b8 100644
+--- a/fuzzware_pipeline/workers/tracegen.py
++++ b/fuzzware_pipeline/workers/tracegen.py
+@@ -240,6 +240,7 @@ class TraceGenProc:
+     stable_mmiotrace_path: Path = None
+     stable_interrupt_trace_path: Path = None
+     stable_dma_trace_path: Path = None
++    #stable_dmatrace_path: Path = None # TODO
+ 
+     child_proc = None
+     status_read_fd = None
+@@ -267,6 +268,7 @@ class TraceGenProc:
+ 
+         if gen_dma_trace:
+             self.stable_dma_trace_path = Path(os.path.join(base_path, ".trace_dma_trace_"+self.uuid))
++            #self.stable_dmatrace_path = Path(os.path.join(base_path, ".trace_dmatrace_"+self.uuid))
+ 
+         self.spawn_emulator_child(config_path, extra_args, gen_bb_set=gen_bb_set, gen_mmio_set=gen_mmio_set, gen_bb_hash=gen_bb_hash, gen_bb_trace=gen_bb_trace, gen_ram_trace=gen_ram_trace, gen_mmio_trace=gen_mmio_trace, gen_interrupt_trace=gen_interrupt_trace,gen_dma_trace=gen_dma_trace,silent=silent)
+ 
+@@ -301,6 +303,7 @@ class TraceGenProc:
+             extra_args += ["--interrupt-trace-out", str(self.stable_interrupt_trace_path)]
+         if gen_dma_trace:
+             extra_args += ["--dma-trace-out", str(self.stable_dma_trace_path)]
++            #extra_args += ["--dma-trace-out", str(self.stable_dmatrace_path)] # TODO
+ 
+         self.child_proc, self.ctrl_write_fd, self.status_read_fd = spawn_forkserver_emu_child(config_path, self.stable_input_path, extra_args, silent=silent)
+ 
+@@ -363,6 +366,7 @@ class TraceGenProc:
+             self.stable_interrupt_trace_path.symlink_to(interrupt_trace_path)
+         if dma_trace_path:
+             self.stable_dma_trace_path.symlink_to(dma_trace_path)
++            #self.stable_dmatrace_path.symlink_to(dma_trace_path) #TODO
+ 
+     def gen_trace(self, input_path, bb_set_path=None, mmio_set_path=None, bb_hash_path=None, bbl_trace_path=None, ram_trace_path=None, mmio_trace_path=None, interrupt_trace_path=None, dma_trace_path=None):
+         # First set up symlinks to the input file and the trace destinations

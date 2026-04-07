@@ -1,0 +1,31 @@
+diff --git a/dockerfile b/dockerfile
+index 1c4829e..9ce289f 100644
+--- a/dockerfile
++++ b/dockerfile
+@@ -9,6 +9,7 @@ run apt-get update
+ # install necessary dependence
+ run apt-get install -y python3-pip automake sudo git vim clang cmake llvm wget unzip build-essential
+ # install gnuplot to draw stat block images
++run pip3 install intelhex
+ run apt-get install -y gnuplot
+ # install binutils-arm-none-eabi to trans ELF to BIN
+ run apt-get install -y binutils-arm-none-eabi
+@@ -23,6 +24,7 @@ run apt-get install -y ninja-build
+ COPY . /SEmu-Fuzz
+ run mkdir /AFLplusplus
+ run cd / && git clone https://github.com/AFLplusplus/AFLplusplus
++run cd /AFLplusplus && git checkout tags/v4.30c
+ run cd /AFLplusplus && git submodule update --remote unicorn_mode
+ # run wget https://github.com/AFLplusplus/AFLplusplus/archive/refs/tags/4.05c.tar.gz
+ # run tar xvf 4.05c.tar.gz -C /AFLplusplus --strip-components 1
+@@ -30,7 +32,7 @@ run make -C /AFLplusplus clean all || exit 1
+ run make -C /AFLplusplus install || exit 1
+ run cd /AFLplusplus/unicorn_mode/ && ./build_unicorn_support.sh || exit 1
+ # fix the libunicorn.so
+-run cd /AFLplusplus/unicorn_mode/unicornafl/unicorn/build && make install || exit 1
++run cd /AFLplusplus/unicorn_mode/unicornafl/unicorn/build_python && make install || exit 1
+ run echo "[+] Success to build AFL!"
+ 
+-run pip3 install /SEmu-Fuzz/.
+\ No newline at end of file
++run pip3 install /SEmu-Fuzz/.

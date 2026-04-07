@@ -1,0 +1,30 @@
+include:
+  - config.yml
+
+peripherals:
+  #uarte:
+    #class: fuzzware_harness.peripherals.nordic.nrf52.SerialDMAC
+    #base_addr: 0x40002000
+    #size: 0x570
+    #irqs:
+    #  # UARTE0_UART0_IRQHandler
+    #  - 0x12
+  nordic_radio:
+    class: fuzzware_harness.peripherals.nordic.nrf52840_radio.RADIO
+    base_addr: 0x40001000
+    size: 0xffc
+    ani: fuzzware_harness.network.artificial_network_interface.ANI
+    network: 
+      protocols:
+        p1: [IEEE802154_PHY,6lowpan_MAC_Data, 6lowpan_mesh_frag, 6lowpan, UDP, COAP]
+        p2: [IEEE802154_PHY,6lowpan_MAC_Data, 6lowpan_mesh_frag, 6lowpan, UDP, COAP]
+        p3: [IEEE802154_PHY,6lowpan_MAC_Data, 6lowpan_mesh_frag, 6lowpan, UDP, COAP]
+        p4: [IEEE802154_PHY,6lowpan_MAC_Data, 6lowpan_mesh_frag, 6lowpan, UDP, COAP]
+    irqs:
+      # RADIO_IRQHandler
+      - 0x11
+  nrf_ppi:
+    class: fuzzware_harness.peripherals.nordic.nrf52_ppi.PPI
+    base_addr: 0x4001F000
+    size: 0x990
+

@@ -1,0 +1,118 @@
+pub fn main(api) {
+    // hook `udp_queue` function
+    api.on_instruction(Some(0x80047d2), verify_cve_17441);
+    api.on_instruction(Some(0x800412a), verify_cve_17442);
+    api.on_instruction(Some(0x800415a), verify_cve_17442_1);
+    api.on_instruction(Some(0x8004476), verify_cve_17444_1);
+    api.on_instruction(Some(0x80044b2), verify_cve_17444_2);
+    api.on_instruction(Some(0x80042a0), verify_cve_17445);
+}
+
+pub fn verify_cve_17441(pc) {
+    let offset_transport_hdr = 0x24;
+    let offset_transport_len = 0x28;
+    let offset_buffer = 0x4;
+    let offset_buffer_len = 0x8;
+
+    let transport_len = register::read("R2")?;
+    let stack_ptr = register::read("R7")?;
+    //log::error!("Stack ptr {:x}", stack_ptr);
+    let f_ptr = memory::read_u32(stack_ptr + 4)?;
+    //log::error!("f_ptr {:x}, read from {:x}", f_ptr, (stack_ptr+4));
+    let sanity = memory::read_u32(f_ptr + 0x28)?;
+    //log::error!("sanity {:x}, read from {:x}", sanity, (f_ptr+0x28));
+    if sanity != transport_len {
+        log::error!("SANITY FAILED: {:x}::{:x}", transport_len, sanity);
+        log::error!("Read FROM f @ {:x}, f_ptr @ {:x}", (stack_ptr -0x2c), (f_ptr + 0x28));
+      } 
+
+    let transport_hdr = memory::read_u32(f_ptr + offset_transport_hdr)?;
+    let buffer = memory::read_u32(f_ptr + offset_buffer)?;
+    let buffer_len = memory::read_u32(f_ptr + offset_buffer_len)?;
+    //log::error!("transport_hdr {:x}", transport_hdr);
+    //log::error!("buffer {:x}", buffer);
+    //log::error!("buffer_len {:x}", buffer_len);
+
+    if transport_hdr + transport_len > buffer + buffer_len {
+      log::error!("FOUND CVE-2020-17441");
+      input::add_bug("CVE-2020-17441");
+
+      }
+
+  }
+
+
+pub fn verify_cve_17442(pc) {
+
+  let optlen = register::read("R3")?;
+  //log::error!("(1) Triggering hook; value is {:x}", optlen);
+  if optlen & 0xff == 0 {
+
+      log::error!("===================");
+      log::error!("FOUND CVE 2020-17442 (1)");
+      log::error!("===================");
+      input::add_bug("CVE-2020-17442-1");
+    }
+
+  }
+
+pub fn verify_cve_17442_1(pc) {
+  let optlen = register::read("R3")?;
+  //log::error!("(2) Triggering hook; value is {:x}", optlen);
+  if optlen & 0xff== 0 {
+
+      log::error!("===================");
+      log::error!("FOUND CVE 2020-17442 (2)");
+      log::error!("===================");
+      input::add_bug("CVE-2020-17442-2");
+    }
+
+  }
+
+
+pub fn verify_cve_17444_1(pc) {
+
+  let optlen = register::read("R3")?;
+  let new_optlen = (optlen + 1) << 3;
+  //log::error!("Triggering hook; old_optlen is {:x}, new_optlen is {:x}", optlen, new_optlen);
+  //if optlen == 0 || new_optlen == 0 {
+  if new_optlen & 0xff == 0 {
+
+      log::error!("===================");
+      log::error!("FOUND CVE 2020-17444 (first hook)");
+      log::error!("===================");
+      input::add_bug("CVE-2020-17444-1");
+    }
+
+  }
+
+pub fn verify_cve_17444_2(pc) {
+  let optlen = register::read("R3")?;
+  //log::error!("Triggering hook; optlen is {:x}", optlen);
+  if optlen &0xff== 0{
+
+      log::error!("===================");
+      log::error!("FOUND CVE 2020-17444 (second hook)");
+      log::error!("===================");
+      input::add_bug("CVE-2020-17444-2");
+    }
+
+  }
+
+
+pub fn verify_cve_17445(pc) {
+  let stack_ptr = register::read("R7")?;
+  let len = memory::read_u8(stack_ptr + 0x13)?;
+  //log::error!("Triggering hook; stack_ptr is {:x}, len is {:x}", stack_ptr, len);
+
+  let optlen = register::read("R3")?;
+  //log::error!("Triggering hook; optlen is {:x}", optlen);
+  if (optlen == 0) || (optlen > len){
+
+      log::error!("===================");
+      log::error!("FOUND CVE 2020-17445");
+      log::error!("===================");
+      input::add_bug("CVE-2020-17445");
+    }
+
+  }

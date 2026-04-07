@@ -1,0 +1,72 @@
+board:
+  init_nsvtor: 0x8000000
+
+interrupt:
+  mode: round-robin
+  trigger:
+    on-infinite-sleep: true
+    interval: 1000
+
+network: 
+  ani: pemu.artificial_network_interface.ANI
+  np_only: true
+  output: f7xx_http_static_output.txt
+  faults:
+    probability: 0x14
+    target: all
+  apriori:
+    - field: TCPIP.IP4_dest
+      val: 0xc0a80001
+    - field: TCPIP.IP4_source
+      val: 0xc0a8000a
+    - field: TCPIP.MAC_dest
+      val: 0x20100000000
+    - field: TCP.ack
+      val: 0x196e
+  protocols:
+    - protocol: [Ethernet, IP4, TCP, HTTP]
+    - protocol: [Ethernet, ARP]
+    - protocol: [Ethernet, IP4, TCP, HTTP]
+
+pemu_hooks:
+  - address: 0x800206a
+    hook_type: receive
+    mcu: f7xx
+  - address: 0x80007c6
+    hook_type: transmit
+    mcu: f7xx
+  #- address: 0x8000f98 
+  #  hook_type: crash
+  #  mcu: f7xx
+  #- address: 0x8000f98 
+  #- address: 0x800afb8
+memory_maps:
+  - name: mmio
+    address: 0x40000000
+    size: 0x20000000
+    type: mmio
+  - name: ITM_DWT_BPU
+    address: 0xe0000000
+    size: 0x3000
+    type: mmio
+  - name: CTI
+    address: 0xe0042000
+    size: 0x1000
+    type: mmio
+  - name: ram
+    address: 0x20000000
+    size: 0x100000
+    type: ram
+  - name: text
+    address: 0x8000000
+    size: 0x2bc00
+    file:
+      path: STM32F767ZI_Nucleo.bin
+    type: rom
+
+exit_hooks:
+  - name: error
+    pc: 0xa5a5a5a4
+
+symbols:
+  - STM32F767ZI_Nucleo.elf
