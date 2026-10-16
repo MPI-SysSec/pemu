@@ -1,0 +1,9 @@
+[submodule "rehosting_platforms/hoedur/fuzzware"]
+	path = rehosting_platforms/hoedur/fuzzware
+	url = https://github.com/fuzzware-fuzzer/fuzzware
+[submodule "rehosting_platforms/hoedur/src/hoedur"]
+	path = rehosting_platforms/hoedur/src/hoedur
+	url = https://github.com/fuzzware-fuzzer/hoedur
+[submodule "rehosting_platforms/fuzzware/fuzzware"]
+	path = rehosting_platforms/fuzzware/fuzzware
+	url = https://github.com/fuzzware-fuzzer/fuzzware
