@@ -7,3 +7,9 @@
 [submodule "rehosting_platforms/fuzzware/fuzzware"]
 	path = rehosting_platforms/fuzzware/fuzzware
 	url = https://github.com/fuzzware-fuzzer/fuzzware
+[submodule "rehosting_platforms/semu/SEmu-Fuzz"]
+	path = rehosting_platforms/semu/SEmu-Fuzz
+	url = https://github.com/IoTS-P/SEmu-Fuzz
+[submodule "rehosting_platforms/semu/SEmu"]
+	path = rehosting_platforms/semu/SEmu
+	url = https://github.com/MCUSec/SEmu
