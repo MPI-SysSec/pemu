@@ -859,16 +859,503 @@ index 0000000..380d8ad
 +    let buf_size = read_word(cur_descriptor + RDES1) & RBS1_MASK;
 +    buf_size
 +}
+diff --git a/emulator/src/hooks/pemu/h753.rs b/emulator/src/hooks/pemu/h753.rs
+new file mode 100644
+index 0000000..0a195c8
+--- /dev/null
++++ b/emulator/src/hooks/pemu/h753.rs
+@@ -0,0 +1,480 @@
++use std::{fmt::write, fs::read};
++
++use crate::hooks::pemu::common::{
++    read_area_bytes_le, read_mmio, read_word, to_hex_string, write_area_bytes, write_mmio,
++    write_word,
++};
++use common::hashbrown::HashMap;
++use pyo3::ffi::descrgetfunc;
++
++const _ETH_DMAMR: u32 = 0x000; //dma bus mode register
++const _ETH_DMASBMR: u32 = 0x004; //dma bus mode register
++const _ETH_DMAISR: u32 = 0x008; //dma interrupt status register
++const _ETH_DMADSR: u32 = 0x00c; //dma debgug status register
++const _ETH_DMACCR: u32 = 0x100; //dma channel control register
++const _ETH_DMACTXCR: u32 = 0x104; //dma channel transmit control register
++const _ETH_DMACRXCR: u32 = 0x108; //dma channel receive control register
++const _ETH_DMACTXDLAR: u32 = 0x114; //dma channel transmit descriptor list register
++const _ETH_DMACRXDLAR: u32 = 0x11c; //dma channel receive descriptor list register
++const _ETH_DMACTXDTPR: u32 = 0x120; //dma channel transmit descriptor tail pointer register
++const _ETH_DMACRXDTPR: u32 = 0x128; //dma channel receive descriptor rail pointerregister
++const _ETH_DMACTXRLR: u32 = 0x12c; //dma channel transmit descriptor ring length register
++const _ETH_DMACRXRLR: u32 = 0x130; //dma channel receive descriptor ring length register
++const _ETH_DMACIER: u32 = 0x134; //dma interrupt enable register
++const _ETH_DMACRXIWTR: u32 = 0x138; //dma channel receive interrupt watchdog timer register
++const _ETH_DMACCATXDR: u32 = 0x144; //dma channel current application transmit descriptor  register
++const _ETH_DMACCARXDR: u32 = 0x14c; //dma channel current application receive descriptor register
++const _ETH_DMACCATXBR: u32 = 0x154; //dma channel current application transmit descriptor buffer register
++const _ETH_DMACCARXBR: u32 = 0x15c; //dma channel current application receive descriptor buffer register
++const _ETH_DMACSR: u32 = 0x160; //dma status register
++const _ETH_DMACMFCR: u32 = 0x16c; //dma channel miossed frame count register
++                                  //
++                                  //
++                                  //
++const _ETH_DMATPDR: u32 = 0x004; //ddma transmit poll demand register
++const _ETH_DMARPDR: u32 = 0x008; //dma receive poll demand register
++const _ETH_DMAMFBOCR: u32 = 0x020; //dma missed frame and buffer overflow counter register
++const _ETH_DMARSWTR: u32 = 0x024; //dma receive status watchdog timer register
++const _ETH_DMACHTDR: u32 = 0x048; //dma current host transmit descriptor register
++const _ETH_DMACHRDR: u32 = 0x04c; //dma current host receive descriptor register
++const ETH_DMACHTBAR: u32 = 0x050; //dma current host transmit buffer address register
++const ETH_DMACHRBAR: u32 = 0x054; //dma current host receive buffer address register
++
++const RDES0: u32 = 0x0; //offset to value given in eth_dmardlar, status
++const RDES1: u32 = 0x4; // sizes of of buffer1 and 2
++const RDES2: u32 = 0x8; // buffer1 addr
++const RDES3: u32 = 0xc; // buffer2 addr or next descriptor addr
++
++const SR_MASK: u32 = 0x1; //start/stop receive bit
++const ST_MASK: u32 = 1; //start/stop transmit bit
++const OWN_MASK: u32 = 1 << 31;
++const RBS1_MASK: u32 = 0x1fff;
++const _RBS2_MASK: u32 = 0x1fff0000;
++const _DIC_MASK: u32 = 1 << 31; //TODO???
++const TX_LS_MASK: u32 = 1 << 28;
++const RS_MASK: u32 = 1 << 6; //receive stauts bit in ETH_DMASR
++const ERS_MASK: u32 = 1 << 11; //early receive status in ETH_DMASR
++const TS_MASK: u32 = 1;
++const TBUS_MASK: u32 = 1 << 2;
++
++const DESCRIPTOR_SIZE: u32 = 0x10 * 4; // 4 dwords
++
++const BASE_ADDR: u32 = 0x40029000; //TODO ethernet base addr
++
++const RCV_COUNTER: u32 = 0xdeadbeef;
++
++pub fn h753_is_store_mmio(address: u32) -> bool {
++    if address >= BASE_ADDR && address < BASE_ADDR + 0x1000 {
++        return true;
++    }
++    return false;
++}
++const _MMIO_BLOCK_LIST: &[u32] = &[
++    BASE_ADDR + _ETH_DMACCATXDR,
++    BASE_ADDR + _ETH_DMACCATXDR,
++    BASE_ADDR + _ETH_DMACCARXBR,
++    BASE_ADDR + _ETH_DMACCATXBR,
++];
++pub fn _h753_is_hook_mmio_read(address: u32) -> bool {
++    // More or less debugging purposes
++    // What do we need to hook?
++    // ETHDMASR
++    // ETH_DMACHRBAR
++    // ETH_DMACHTBAR
++    if _MMIO_BLOCK_LIST.contains(&address) {
++        return true;
++    }
++    return false;
++}
++
++pub fn _h753_post_read_hook(address: u32, mmio_writes: &mut HashMap<u32, u32>) {
++    mmio_writes.remove(&address);
++}
++
++pub fn pemu_place_packet(mmio_writes: &mut HashMap<u32, u32>, address: u32, packet: Vec<u8>) {
++    //println!("Place packet {:x}", address);
++    //dbg!(&packet);
++    let mut mut_packet = packet;
++    //let mut mut_packet = packet.clone();
++    /*
++        if mut_packet.len() > 0x20 {
++            mut_packet[0x1e] = 10;
++            mut_packet[0x1f] = 42;
++            mut_packet[0x20] = 0;
++            mut_packet[0x21] = 2;
++        }
++    */
++    let hex_packet: String = to_hex_string(&mut_packet);
++    //println!("Placed packet {}", hex_packet);
++    set_buffer_size(mmio_writes, mut_packet.len() as u32);
++    write_area_bytes(address, mut_packet);
++}
++
++pub fn pemu_post_h753_receive(mmio_writes: &mut HashMap<u32, u32>) {
++    //println!("Postprocessing");
++    // Postprocessing
++    // RDES3
++    let descriptor = get_current_descriptor(mmio_writes);
++    //println!("descriptor {:x}", descriptor);
++
++    let mut rdes3 = read_word(descriptor + RDES3);
++    rdes3 = (rdes3 & 0x7fff) | 0x30000000;
++    //println!("writing to rdes3: {:x}::{:x}", descriptor + RDES3, rdes3);
++    write_word(descriptor + RDES3, rdes3);
++
++    set_receive_status(mmio_writes);
++
++    return;
++}
++
++pub fn pemu_h753_receive(mmio_writes: &mut HashMap<u32, u32>) -> (u32, u32, u32) {
++    //println!("RECEIVE");
++    let buf_size: u32 = 0;
++    let buf_addr: u32 = 0;
++    let send_packet: u32 = 0;
++    let rcv_counter = read_mmio(RCV_COUNTER, mmio_writes);
++    /*
++    if rcv_counter > 0 {
++        write_mmio(RCV_COUNTER, rcv_counter - 1, mmio_writes);
++        //println!("SKibidi placement {}", rcv_counter);
++        return (send_packet, buf_addr, buf_size);
++    }
++    write_mmio(RCV_COUNTER, 2, mmio_writes);
++    */
++    if rcv_counter < 2 {
++        write_mmio(RCV_COUNTER, rcv_counter + 1, mmio_writes);
++        //println!("SKibidi placement {}", rcv_counter);
++        return (send_packet, buf_addr, buf_size);
++    }
++    write_mmio(RCV_COUNTER, 0, mmio_writes);
++
++    // TODO
++    let receive_status = get_receive_status(mmio_writes);
++    if !receive_status {
++        // Not allowed to do anythin yet
++        ////println!("Not allowed to send yet :-(");
++        return (send_packet, buf_addr, buf_size);
++    }
++    if poll_descriptor(mmio_writes) == 0 {
++        ////println!("Not owning the descriptor");
++        return (send_packet, buf_addr, buf_size);
++    }
++
++    // Values for the emulator to insert the packet
++    let buf_size = get_buffer_size(mmio_writes);
++    let buf_addr = get_buffer_addr(mmio_writes);
++    //println!("buf addr, buf size: {:x}::{:x}", buf_addr, buf_size);
++    write_mmio(BASE_ADDR + _ETH_DMACCARXBR, buf_addr, mmio_writes);
++    if buf_addr == 0 {
++        return (send_packet, buf_addr, buf_size);
++    }
++
++    let send_packet: u32 = 1;
++    return (send_packet, buf_addr, buf_size);
++}
++
++pub fn pemu_h753_transmit(mmio_writes: &mut HashMap<u32, u32>) -> (Vec<u8>, i32) {
++    //println!("TRANSMIT!");
++    let transmit_status = get_transmit_status(mmio_writes);
++    //println!("transmit_status: {}", transmit_status);
++    if !transmit_status {
++        // Not allowed to transmit yet
++        return (vec![], -1);
++    }
++
++    if poll_tx_descriptor(mmio_writes) == 0 {
++        ////println!("[Transmit] no desciptor found");
++        // no descriptor found
++        // TODO maybe set_tbus_state?
++        return (vec![], -1);
++    }
++
++    let descriptor = get_current_tx_descriptor(mmio_writes);
++    ////println!("[transmit] polled descriptor");
++
++    // So far we only read out the buffer of one descriptor
++    // In theory a packet might be spread among multiple buffers
++    let packet_size = get_tx_buffer_size(mmio_writes);
++    let buf_addr = get_tx_buffer_addr(mmio_writes);
++    if buf_addr == 0 {
++        return (vec![], -1);
++    }
++    write_mmio(BASE_ADDR + _ETH_DMACCATXBR, buf_addr, mmio_writes);
++    let packet: Vec<u8> = read_area_bytes_le(buf_addr, packet_size);
++    //dbg!(&packet);
++
++    // Post transfer steps
++    // reset own bit
++    write_word(
++        get_current_tx_descriptor(mmio_writes) + RDES3,
++        read_word(get_current_tx_descriptor(mmio_writes) + RDES3) & 0x7fffffff,
++    );
++
++    // Do this for all further descriptors?
++    let mut cur_descriptor = get_current_tx_descriptor(mmio_writes);
++    let base_descriptor = cur_descriptor;
++    while read_word(cur_descriptor + RDES3) & TX_LS_MASK == 0 {
++        if poll_tx_descriptor(mmio_writes) == 1 {
++            // TODO maybe set tbus state
++            return (packet, -1);
++        }
++        cur_descriptor = get_current_tx_descriptor(mmio_writes);
++        write_word(
++            cur_descriptor + RDES3,
++            read_word(cur_descriptor + RDES3) & 0x7fffffff,
++        );
++
++        if cur_descriptor == base_descriptor {
++            break;
++        }
++    }
++
++    (packet, -1)
++}
++
++fn set_receive_status(mmio_writes: &mut HashMap<u32, u32>) {
++    // Set the the RS bit in ETH_DMASR
++    // clear ERS (early receive status)
++    // set NIS (normal interrupt summary)
++    let enabled_interrupts = get_active_receive_interrupts(mmio_writes);
++    write_mmio(
++        BASE_ADDR + _ETH_DMACSR,
++        enabled_interrupts & RS_MASK,
++        mmio_writes,
++    );
++    if enabled_interrupts & RS_MASK != 0 {
++        // ERS is cleared if RS is set
++        let status_reg = read_mmio(BASE_ADDR + _ETH_DMACSR, mmio_writes);
++        let new_status_reg = status_reg & (0xffffffff ^ ERS_MASK);
++        write_mmio(BASE_ADDR + _ETH_DMACSR, new_status_reg, mmio_writes);
++    }
++
++    // NIS
++    let status_reg = read_mmio(BASE_ADDR + _ETH_DMACSR, mmio_writes);
++    let new_status_reg = status_reg | get_nis_val(status_reg);
++    write_mmio(BASE_ADDR + _ETH_DMACSR, new_status_reg, mmio_writes);
++}
++
++fn get_nis_val(status_reg: u32) -> u32 {
++    let nis_val = ((status_reg & TS_MASK)
++        | ((status_reg & TBUS_MASK) >> 2)
++        | ((status_reg & RS_MASK) >> 6)
++        | ((status_reg & ERS_MASK) >> 14))
++        << 16;
++    nis_val
++}
++
++fn is_descriptor_owner(mmio_writes: &mut HashMap<u32, u32>) -> bool {
++    let cur_descriptor = get_current_descriptor(mmio_writes);
++    ((read_word(cur_descriptor + RDES3) & OWN_MASK) >> 31) == 1
++}
++
++fn get_active_receive_interrupts(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    let h753_mask = 0x8840;
++    read_mmio(BASE_ADDR + _ETH_DMACIER, mmio_writes) & h753_mask
++}
++
++fn get_buffer_addr(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    let cur_descriptor = get_current_descriptor(mmio_writes);
++    // check which address is valid:
++    let status = read_word(cur_descriptor + RDES3);
++    if (status >> 24) & 1 == 1 {
++        return read_word(cur_descriptor + RDES0);
++    } else if (status >> 25) & 1 == 1 {
++        //buffer addr 2 valid
++        return read_word(cur_descriptor + RDES2);
++    }
++    0
++}
++
++fn get_buffer_size(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    let receive_control = read_mmio(BASE_ADDR + _ETH_DMACRXCR, mmio_writes);
++    let buf_size = (receive_control >> 1) & 0x3fff;
++    buf_size
++}
++
++fn set_buffer_size(mmio_writes: &mut HashMap<u32, u32>, val: u32) {
++    let cur_descriptor = get_current_descriptor(mmio_writes);
++    let cur_descriptor_val = read_word(cur_descriptor + RDES3);
++    let updated_descriptor = (cur_descriptor_val & 0xffff7fff) | val;
++    ////println!("Setting seize: {:x}::{:x}-->{:x}", cur_descriptor, cur_descriptor_val ,updated_descriptor,);
++    write_word(cur_descriptor + RDES3, updated_descriptor);
++}
++
++fn get_receive_status(mmio_writes: &mut HashMap<u32, u32>) -> bool {
++    (read_mmio(BASE_ADDR + _ETH_DMACRXCR, mmio_writes) & SR_MASK) == 1
++}
++
++fn get_transmit_status(mmio_writes: &mut HashMap<u32, u32>) -> bool {
++    (read_mmio(BASE_ADDR + _ETH_DMACTXCR, mmio_writes) & ST_MASK) == 1
++}
++
++fn get_current_descriptor(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    read_mmio(BASE_ADDR + _ETH_DMACCARXDR, mmio_writes)
++}
++
++// TODO: do we propagate changes through to the firmware mmio reads?
++fn set_current_descriptor(descriptor: u32, mmio_writes: &mut HashMap<u32, u32>) {
++    write_mmio(BASE_ADDR + _ETH_DMACCARXDR, descriptor, mmio_writes);
++}
++
++fn get_current_tx_descriptor(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    read_mmio(BASE_ADDR + _ETH_DMACCATXDR, mmio_writes)
++}
++
++// TODO: do we propagate changes through to the firmware mmio reads?
++fn set_current_tx_descriptor(descriptor: u32, mmio_writes: &mut HashMap<u32, u32>) {
++    write_mmio(BASE_ADDR + _ETH_DMACCATXDR, descriptor, mmio_writes);
++}
++
++fn poll_descriptor(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    /*
++    let first_descriptor = read_mmio(BASE_ADDR + _ETH_DMACRXDLAR, mmio_writes);
++    let beyond_last_descriptor = read_mmio(BASE_ADDR + _ETH_DMACRXDTPR, mmio_writes);
++    let ring_length = read_mmio(BASE_ADDR + _ETH_DMACTXRLR, mmio_writes);
++
++    let rx_channel_control = read_mmio(BASE_ADDR + _ETH_DMACRXCR, mmio_writes);
++    let start_receive = rx_channel_control & SR_MASK;
++    let receive_buffer_size = (rx_channel_control & 0x7ffe) >> 1;
++
++    let channel_control = read_mmio(BASE_ADDR + _ETH_DMACCR, mmio_writes);
++    let dsl = (channel_control >> 18) & 0x3; // dwords to skip between descriptors
++
++    //println!("first_descriptor: {:x}", first_descriptor);
++    //println!("beyond last descriptor {:x}", beyond_last_descriptor);
++    //println!("ring_length {:x}", ring_length);
++    //println!("Rx channel_control {:x}", rx_channel_control);
++    //println!("channel_control {:x}", channel_control);
++    //println!("dsl is {:x}", dsl);
++    */
++
++    let cur_descriptor = get_current_descriptor(mmio_writes);
++    if cur_descriptor == 0 {
++        let base_descriptor: u32 = read_mmio(BASE_ADDR + _ETH_DMACRXDLAR, mmio_writes);
++        set_current_descriptor(base_descriptor, mmio_writes);
++    } else {
++        set_current_descriptor(poll_ring(cur_descriptor, mmio_writes), mmio_writes);
++
++        if get_current_descriptor(mmio_writes) == 0 {
++            ////println!("ERROR");
++            return 0;
++        }
++    }
++    //println!("got descriptor {:x}", get_current_descriptor(mmio_writes));
++    if !is_descriptor_owner(mmio_writes) {
++        return 0;
++    }
++
++    return 1;
++}
++
++fn poll_ring(descriptor: u32, mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    //
++    //println!("descriptor {:x}::{:x}", descriptor, RDES3);
++    let rdes3 = read_word(descriptor + RDES3);
++    if rdes3 & OWN_MASK != 0 {
++        // we can just keep the descriptor - its ours
++        return descriptor;
++    }
++
++    //loop over list from the beginnging
++    let descriptor_base = read_mmio(BASE_ADDR + _ETH_DMACRXDLAR, mmio_writes);
++    let ring_length = read_mmio(BASE_ADDR + _ETH_DMACRXRLR, mmio_writes) & 0x3ff;
++    //println!("Got {:x} items in the ring", ring_length);
++
++    let channel_control = read_mmio(BASE_ADDR + _ETH_DMACCR, mmio_writes);
++    let dsl = (channel_control >> 18) & 0x3; // dwords to skip between descriptors
++    let beyond_last_descriptor = read_mmio(BASE_ADDR + _ETH_DMACRXDTPR, mmio_writes);
++    // loop over list until we either reach the parsed descriptor or find a free one
++    for cur_descriptor in (descriptor_base..beyond_last_descriptor)
++        .step_by((DESCRIPTOR_SIZE + dsl * 0x10).try_into().unwrap())
++    {
++        let rdes3 = read_word(cur_descriptor + RDES3);
++        if rdes3 & OWN_MASK != 0 {
++            return cur_descriptor;
++        }
++    }
++
++    return 0;
++}
++
++fn poll_tx_descriptor(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    let cur_descriptor = get_current_tx_descriptor(mmio_writes);
++    //println!("[1] cur_descriptor: {:x}", cur_descriptor);
++
++    if cur_descriptor == 0 {
++        // Not descriptor set, look at the start of the descriptor list
++        let base_descriptor = read_mmio(BASE_ADDR + _ETH_DMACTXDLAR, mmio_writes);
++        set_current_tx_descriptor(base_descriptor, mmio_writes);
++    }
++
++    let cur_descriptor = get_current_tx_descriptor(mmio_writes);
++    //println!("[2] cur_descriptor: {:x}", cur_descriptor);
++    let descriptor_owner = get_tx_descriptor_owner(cur_descriptor);
++    //println!("descriptor_owner {:x}", descriptor_owner);
++    if descriptor_owner != 0 {
++        // Nice we already own the first descriptor
++        return 1;
++    }
++
++    //loop over list from the beginnging
++    let descriptor_base = read_mmio(BASE_ADDR + _ETH_DMACTXDLAR, mmio_writes);
++    let ring_length = read_mmio(BASE_ADDR + _ETH_DMACTXRLR, mmio_writes) & 0x3ff;
++    //println!("Got {:x} items in the ring", ring_length);
++
++    let channel_control = read_mmio(BASE_ADDR + _ETH_DMACCR, mmio_writes);
++    let dsl = (channel_control >> 18) & 0x3; // dwords to skip between descriptors
++    let beyond_last_descriptor = read_mmio(BASE_ADDR + _ETH_DMACTXDTPR, mmio_writes);
++    //println!("first_descriptor: {:x}", descriptor_base);
++    //println!("beyond last descriptor {:x}", beyond_last_descriptor);
++    //println!("ring_length {:x}", ring_length);
++    //println!("channel_control {:x}", channel_control);
++    //println!("dsl is {:x}", dsl);
++    // loop over list until we either reach the parsed descriptor or find a free one
++    for cur_descriptor in (descriptor_base..beyond_last_descriptor)
++        .step_by((DESCRIPTOR_SIZE + dsl * 0x10).try_into().unwrap())
++    {
++        //println!("Checking cur_descriptor {:x}", cur_descriptor);
++        let rdes3 = read_word(cur_descriptor + RDES3);
++        if rdes3 & OWN_MASK != 0 {
++            set_current_tx_descriptor(cur_descriptor, mmio_writes);
++            return 1;
++        }
++    }
++
++    return 0;
++}
++
++fn get_tx_descriptor_owner(cur_descriptor: u32) -> u32 {
++    if cur_descriptor + RDES3 == 0 {
++        return 0;
++    }
++    (read_word(cur_descriptor + RDES3) & OWN_MASK) >> 31
++}
++
++fn get_tx_buffer_addr(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    let cur_descriptor = get_current_tx_descriptor(mmio_writes);
++    let rdes3 = read_word(cur_descriptor + RDES3);
++    if (rdes3 >> 18) & 0x801 == 0x801 {
++        // First buffer is TSO Header Address pointer
++        let buf_addr = read_word(cur_descriptor + RDES1);
++        return buf_addr;
++    } else {
++        let buf_addr = read_word(cur_descriptor + RDES0);
++        return buf_addr;
++    }
++    0
++}
++
++fn get_tx_buffer_size(mmio_writes: &mut HashMap<u32, u32>) -> u32 {
++    let cur_descriptor = get_current_tx_descriptor(mmio_writes);
++    let rdes3 = read_word(cur_descriptor + RDES3);
++    if (rdes3 >> 18) & 0x801 == 0x801 {
++        // First buffer is TSO Header Address pointer
++        let buf_size = (read_word(cur_descriptor + RDES2) >> 16) & RBS1_MASK;
++        return buf_size;
++    } else {
++        let buf_size = read_word(cur_descriptor + RDES2) & RBS1_MASK;
++        return buf_size;
++    }
++}
 diff --git a/emulator/src/hooks/pemu/mod.rs b/emulator/src/hooks/pemu/mod.rs
 new file mode 100644
-index 0000000..e2075a6
+index 0000000..0f03d65
 --- /dev/null
 +++ b/emulator/src/hooks/pemu/mod.rs
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,7 @@
 +pub(crate) mod cc2538;
 +pub(crate) mod common;
 +pub(crate) mod contiki_cc2538;
 +pub(crate) mod f7xx;
++pub(crate) mod h753;
 +pub(crate) mod mps2;
 +pub(crate) mod nrf52;
 diff --git a/emulator/src/hooks/pemu/mps2.rs b/emulator/src/hooks/pemu/mps2.rs
@@ -1137,7 +1624,7 @@ index 9f8b3b0..f82d5fb 100644
  #[serde(rename_all = "kebab-case")]
  pub struct TargetInterruptTrigger {
 diff --git a/emulator/src/lib.rs b/emulator/src/lib.rs
-index 6c05931..2dd0607 100644
+index 6c05931..8ae0b2b 100644
 --- a/emulator/src/lib.rs
 +++ b/emulator/src/lib.rs
 @@ -23,7 +23,10 @@ use frametracer::{
@@ -1167,7 +1654,7 @@ index 6c05931..2dd0607 100644
 -pub use qemu_rs::Address;
 -
 +use common::hashbrown::HashMap;
-+use hooks::pemu::{cc2538, contiki_cc2538, f7xx, mps2, nrf52};
++use hooks::pemu::{cc2538, contiki_cc2538, f7xx, h753, mps2, nrf52};
 +use modeling::input::value::InputValueType;
 +use modeling::input::{InputContext, StreamContext};
 +use pyo3::prelude::*;
@@ -1188,7 +1675,7 @@ index 6c05931..2dd0607 100644
  pub mod coverage {
      pub use qemu_rs::coverage::{RawBitmap, RawEntry, HASH_KEY};
  }
-@@ -59,6 +68,260 @@ use self::{debug::EmulatorDebugData, hooks::debug::DebugHook, limits::TargetLimi
+@@ -59,6 +68,263 @@ use self::{debug::EmulatorDebugData, hooks::debug::DebugHook, limits::TargetLimi
  
  pub type CoverageLog = FxHashSet<Address>;
  
@@ -1207,6 +1694,8 @@ index 6c05931..2dd0607 100644
 +    ContikiCC2538Receive,
 +    MPS2Transmit,
 +    MPS2Receive,
++    H753Transmit,
++    H753Receive,
 +    Crash,
 +    NoCallback,
 +}
@@ -1221,6 +1710,7 @@ index 6c05931..2dd0607 100644
 +    CC2538,
 +    ContikiCC2538,
 +    MPS2,
++    H753,
 +    NoCallback,
 +}
 +
@@ -1449,7 +1939,7 @@ index 6c05931..2dd0607 100644
  #[derive(Debug)]
  pub struct ExecutionResult<I: Input + Debug> {
      pub counts: EmulatorCounts,
-@@ -156,6 +419,11 @@ pub(crate) struct EmulatorData<I: 'static + Input + Debug> {
+@@ -156,6 +422,11 @@ pub(crate) struct EmulatorData<I: 'static + Input + Debug> {
      limits: EmulatorLimits,
      input_limits: Option<EmulatorLimits>,
      debug: EmulatorDebugData,
@@ -1461,7 +1951,7 @@ index 6c05931..2dd0607 100644
  }
  
  impl<I: Input + Debug> EmulatorData<I> {
-@@ -166,6 +434,10 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -166,6 +437,10 @@ impl<I: Input + Debug> EmulatorData<I> {
          limits: EmulatorLimits,
          interrupt: EmulatorInterruptConfig,
          debug: EmulatorDebugData,
@@ -1472,7 +1962,7 @@ index 6c05931..2dd0607 100644
      ) -> Self {
          Self {
              arch: ArchEmulator::new(cpu, board),
-@@ -181,12 +453,18 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -181,12 +456,18 @@ impl<I: Input + Debug> EmulatorData<I> {
              limits,
              input_limits: None,
              debug,
@@ -1491,7 +1981,7 @@ index 6c05931..2dd0607 100644
  
          // verify emulator is in an expected state
          debug_assert!(self.stop.is_none());
-@@ -205,6 +483,16 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -205,6 +486,16 @@ impl<I: Input + Debug> EmulatorData<I> {
          self.hardware.prepare_run(input);
          self.execution_start = Some(Instant::now());
  
@@ -1508,7 +1998,7 @@ index 6c05931..2dd0607 100644
          Ok(())
      }
  
-@@ -288,6 +576,327 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -288,6 +579,330 @@ impl<I: Input + Debug> EmulatorData<I> {
          Ok(())
      }
  
@@ -1703,6 +2193,9 @@ index 6c05931..2dd0607 100644
 +                                PemuHookType::NRF52Receive => {
 +                                    nrf52::pemu_place_packet(&mut self.pemu_mmio, address, result);
 +                                }
++                                PemuHookType::H753Receive => {
++                                    h753::pemu_place_packet(&mut self.pemu_mmio, address, result);
++                                }
 +                                _ => (),
 +                            };
 +                            return true;
@@ -1836,7 +2329,7 @@ index 6c05931..2dd0607 100644
      fn offset_limits(&mut self) {
          if let Some(basic_blocks) = &mut self.limits.basic_blocks {
              *basic_blocks += self.counts.basic_block;
-@@ -439,6 +1048,12 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -439,6 +1054,12 @@ impl<I: Input + Debug> EmulatorData<I> {
      }
  
      pub fn snapshot_create(&self) -> Result<EmulatorSnapshot> {
@@ -1849,27 +2342,33 @@ index 6c05931..2dd0607 100644
          Ok(EmulatorSnapshot {
              arch: self
                  .arch
-@@ -453,6 +1068,7 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -453,6 +1074,8 @@ impl<I: Input + Debug> EmulatorData<I> {
              interrupt_last_location: self.interrupt_last_location.clone(),
              step_size: self.step_size,
              debug: self.debug.enabled().then(|| self.debug.snapshot_create()),
 +            pemu_data: self.pemu_data.snapshot_create(),
++            pemu_mmio: self.pemu_mmio.clone(),
          })
      }
  
-@@ -468,6 +1084,7 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -468,6 +1091,8 @@ impl<I: Input + Debug> EmulatorData<I> {
              interrupt_last_location,
              step_size,
              debug,
 +            pemu_data,
++            pemu_mmio,
          } = snapshot;
  
          self.arch
-@@ -480,6 +1097,12 @@ impl<I: Input + Debug> EmulatorData<I> {
+@@ -480,6 +1105,16 @@ impl<I: Input + Debug> EmulatorData<I> {
          self.last_input_read = *last_input_read;
          self.interrupt_last_location = interrupt_last_location.clone();
          self.step_size = *step_size;
 +        self.pemu_data.snapshot_restore(pemu_data);
++        // The PEMU MMIO hooks keep emulated peripheral state (e.g. current RX/TX DMA descriptor,
++        // status registers, reception counter) in pemu_mmio. Restore it, otherwise this state
++        // leaks between runs and inputs (e.g. after a transmission) do not replay deterministically.
++        self.pemu_mmio = pemu_mmio.clone();
 +
 +        // PEMU restore snapshot
 +        if let Some(pemu_object) = &self.pemu {
@@ -1878,7 +2377,7 @@ index 6c05931..2dd0607 100644
  
          if let Some(debug) = debug {
              self.debug.snapshot_restore(debug);
-@@ -547,6 +1170,109 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
+@@ -547,6 +1182,123 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
      }
  
      fn on_debug(&mut self, pc: Address) -> Result<()> {
@@ -1972,6 +2471,20 @@ index 6c05931..2dd0607 100644
 +                    let transmit_res = mps2::pemu_mps2_transmit(&mut self.pemu_mmio);
 +                    self.pemu_do_transmission(transmit_res.0, transmit_res.1);
 +                }
++                PemuHookType::H753Receive => {
++                    log::debug!("\t{:#0x}:::hook type is receive", identifier);
++                    let res_tuple: (u32, u32, u32) = h753::pemu_h753_receive(&mut self.pemu_mmio);
++                    let do_post_hooks =
++                        self.pemu_do_reception(res_tuple.0, res_tuple.1, res_tuple.2, *value);
++                    if do_post_hooks {
++                        h753::pemu_post_h753_receive(&mut self.pemu_mmio);
++                    }
++                }
++                PemuHookType::H753Transmit => {
++                    log::debug!("\t{:#0x}:::hook type is transmit", identifier);
++                    let transmit_res = h753::pemu_h753_transmit(&mut self.pemu_mmio);
++                    self.pemu_do_transmission(transmit_res.0, transmit_res.1);
++                }
 +                // Crash hook could be used for debugging or setting milestone bbs
 +                PemuHookType::Crash => {
 +                    log::debug!("Input reached the goal :-)");
@@ -1988,7 +2501,7 @@ index 6c05931..2dd0607 100644
          Self::on_debug(self, pc)
      }
  
-@@ -608,9 +1334,28 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
+@@ -608,9 +1360,28 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
                  return Ok(0);
              }
          }
@@ -2019,7 +2532,7 @@ index 6c05931..2dd0607 100644
          let value = match self.hardware.mmio_read(&context, size) {
              Ok(Some((data, input))) => {
                  // update MMIO read count
-@@ -654,7 +1399,6 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
+@@ -654,7 +1425,6 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
  
      fn on_write(&mut self, pc: Address, addr: Address, data: u64, size: u8) -> Result<()> {
          debug_assert!(self.mmio_rewound.is_none());
@@ -2027,7 +2540,7 @@ index 6c05931..2dd0607 100644
          let context = AccessContext::new(pc, addr);
          let size = ReadSize::try_from(size as u32)?;
          self.hardware.mmio_write(&context, data as USize, size);
-@@ -669,6 +1413,38 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
+@@ -669,6 +1439,44 @@ impl<I: Input + Debug> QemuCallback for EmulatorData<I> {
          )?;
          self.check_stop_conditions_debug(true)?;
  
@@ -2058,7 +2571,13 @@ index 6c05931..2dd0607 100644
 +                    log::debug!("Registered write to {:#0x}::{:#0x}", addr, data);
 +                }
 +            }
-+
++            PemuMmioType::H753 => {
++                if h753::h753_is_store_mmio(addr) {
++                    self.pemu_mmio.insert(addr, data as u32);
++                    //println!("Registered write to {:#0x}::{:#0x}", addr, data);
++                    log::debug!("Registered write to {:#0x}::{:#0x}", addr, data);
++                }
++            }
 +            PemuMmioType::NoCallback => (),
 +            //log::debug!("addr is {:#0x} :: mmio range {:#0x} - {:#0x}", addr, mmio_range.0, mmio_range.1);
 +        };
@@ -2066,15 +2585,16 @@ index 6c05931..2dd0607 100644
          Ok(())
      }
  
-@@ -768,6 +1544,7 @@ pub struct EmulatorSnapshot {
+@@ -768,6 +1576,8 @@ pub struct EmulatorSnapshot {
      interrupt_last_location: Vec<u64>,
      step_size: Option<NonZeroUsize>,
      debug: Option<EmulatorDebugSnapshot>,
 +    pemu_data: PemuDataSnapshot,
++    pemu_mmio: HashMap<u32, u32>,
  }
  
  impl<I: Input + Debug> Drop for Emulator<I> {
-@@ -858,6 +1635,64 @@ impl<I: Input + Debug> Emulator<I> {
+@@ -858,6 +1668,67 @@ impl<I: Input + Debug> Emulator<I> {
              debug.trace_file,
          )?;
  
@@ -2103,6 +2623,7 @@ index 6c05931..2dd0607 100644
 +                        "cc2538" => PemuHookType::CC2538Transmit,
 +                        "contiki-cc2538" => PemuHookType::ContikiCC2538Transmit,
 +                        "mps2" => PemuHookType::MPS2Transmit,
++                        "h753" => PemuHookType::H753Transmit,
 +                        _ => PemuHookType::NoCallback,
 +                    },
 +                    "receive" => match hook.mcu.as_str() {
@@ -2111,6 +2632,7 @@ index 6c05931..2dd0607 100644
 +                        "cc2538" => PemuHookType::CC2538Receive,
 +                        "contiki-cc2538" => PemuHookType::ContikiCC2538Receive,
 +                        "mps2" => PemuHookType::MPS2Receive,
++                        "h753" => PemuHookType::H753Receive,
 +                        _ => PemuHookType::NoCallback,
 +                    },
 +                    "crash" => PemuHookType::Crash,
@@ -2133,13 +2655,14 @@ index 6c05931..2dd0607 100644
 +            "cc2538" => PemuMmioType::CC2538,
 +            "contiki-cc2538" => PemuMmioType::ContikiCC2538,
 +            "mps2" => PemuMmioType::MPS2,
++            "h753" => PemuMmioType::H753,
 +            _ => PemuMmioType::NoCallback,
 +        };
 +
          // callback handler
          let emudata = Arc::new(RefCell::new(EmulatorData::new(
              cpu,
-@@ -866,11 +1701,17 @@ impl<I: Input + Debug> Emulator<I> {
+@@ -866,11 +1737,17 @@ impl<I: Input + Debug> Emulator<I> {
              target.limits.unwrap_or_default().into(),
              interrupt,
              debug_data,
@@ -2158,7 +2681,7 @@ index 6c05931..2dd0607 100644
          // init qemu
          init_qemu(
              cpu,
-@@ -880,7 +1721,7 @@ impl<I: Input + Debug> Emulator<I> {
+@@ -880,7 +1757,7 @@ impl<I: Input + Debug> Emulator<I> {
              target.memory_maps,
              interrupt_trigger,
              exit_hooks_pc,
@@ -2167,7 +2690,7 @@ index 6c05931..2dd0607 100644
              emudata.borrow().debug.trace_mode(),
          )
          .context("init qemu")?;
-@@ -950,6 +1791,152 @@ impl<I: Input + Debug> Emulator<I> {
+@@ -950,6 +1827,152 @@ impl<I: Input + Debug> Emulator<I> {
      }
  }
  
@@ -2320,7 +2843,7 @@ index 6c05931..2dd0607 100644
  #[derive(Debug)]
  pub struct EmulatorConfig {
      target: EmulatorTargetConfig,
-@@ -1004,6 +1991,8 @@ pub struct EmulatorTargetConfig {
+@@ -1004,6 +2027,8 @@ pub struct EmulatorTargetConfig {
      board: Option<Board>,
      limits: Option<TargetLimits>,
      interrupt: Option<TargetInterruptConfig>,
@@ -2329,7 +2852,7 @@ index 6c05931..2dd0607 100644
      memory_maps: Vec<MemoryMap>,
      mmio_models: Option<Vec<Mmio>>,
      exit_hooks: Option<Vec<ExitHook>>,
-@@ -1014,13 +2003,15 @@ pub struct EmulatorTargetConfig {
+@@ -1014,13 +2039,15 @@ pub struct EmulatorTargetConfig {
  
  impl EmulatorTargetConfig {
      pub fn read_from(file_storage: &mut FileStorage) -> Result<Self> {
@@ -2346,7 +2869,7 @@ index 6c05931..2dd0607 100644
          let mut config: Self = serde_yaml::from_slice(content)
              .with_context(|| format!("Failed to parse emulator config file {path:?}"))?;
  
-@@ -1039,6 +2030,7 @@ impl EmulatorTargetConfig {
+@@ -1039,6 +2066,7 @@ impl EmulatorTargetConfig {
              .try_for_each(|path| file_storage.read(path).map(|_| ()))
              .context("Failed to load debug symbols")?;
  
@@ -12754,7 +13277,7 @@ index c4463e4..c9bf3bc 100755
      # use archive
      hoedur = init_hoedur_import_config(fuzzer, archive)
 diff --git a/scripts/fuzz_common.py b/scripts/fuzz_common.py
-index 6bc1ffa..c672aaf 100755
+index 6bc1ffa..6f7c430 100755
 --- a/scripts/fuzz_common.py
 +++ b/scripts/fuzz_common.py
 @@ -6,11 +6,18 @@ import psutil
